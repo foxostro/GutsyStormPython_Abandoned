@@ -1,0 +1,8 @@
+Gutsy Storm is the codename for an otherwise nameless game project which
+seaks to investigate 3D game programming with PyOpenGL. The game is so
+far intended to use a voxel-based, procedurally generated work similar
+to Minecraft. This, however, is not exactly a Minecraft clone. Instead,
+the plan is to use Minecraft-like terrain and terrain editing
+functionality as the basis for the game world and the world editor. The
+game itself will be a simple hack-n-slash RPG which itself could be
+considered to be somewhat of a Diablo clone.
