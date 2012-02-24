@@ -58,11 +58,27 @@ glBindBuffer(GL_ARRAY_BUFFER, vbo_cube_norms)
 glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
 del data
 
-window = pyglet.window.Window(width=640, height=400)
+# Try to create a window that support antialiasing.
+try:
+    config = Config(sample_buffers=1,
+                    samples=4,
+                    depth_size=24,
+                    double_buffer=True)
+    window = pyglet.window.Window(width=640,
+                                  height=400,
+                                  resizable=True,
+                                  config=config,
+                                  vsync=True)
+except pyglet.window.NoSuchConfigException:
+    # Well, if it's not supported then get whatever we can get.
+    window = pyglet.window.Window(width=640,
+                                  height=400,
+                                  resizable=True)
+
 
 glClearColor(0.2, 0.4, 0.5, 1.0)
 
-gluLookAt(3.0, 3.0, 3.0, # Eye
+gluLookAt(3.0, 3.0, 3.0,  # Eye
           0.0, 0.0, 0.0,  # Center
           0.0, 1.0, 0.0)  # Up
 
