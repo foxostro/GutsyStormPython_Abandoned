@@ -2,6 +2,8 @@ import pyglet
 from pyglet.gl import *
 from pyglet.window import key
 from ctypes import pointer, sizeof
+from Shader import Shader
+
 
 rot = 0.0
 useWireframe = False
@@ -83,9 +85,7 @@ gluLookAt(3.0, 3.0, 3.0,  # Eye
           0.0, 1.0, 0.0)  # Up
 
 glEnableClientState(GL_VERTEX_ARRAY)
-
-
-light0pos = [20.0, 20.0, 20.0, 0.0] # directional light
+glEnableClientState(GL_NORMAL_ARRAY)
 
 glEnable(GL_DEPTH_TEST)
 
@@ -97,7 +97,7 @@ glFrontFace(GL_CCW)
 glEnable(GL_LIGHTING)
 glEnable(GL_LIGHT0)
 
-glLightfv(GL_LIGHT0, GL_POSITION, vec(*light0pos))
+glLightfv(GL_LIGHT0, GL_POSITION, vec(0.4, 1.0, 1.0, 0.0))
 glLightfv(GL_LIGHT0, GL_AMBIENT, vec(0.3, 0.3, 0.3, 1.0))
 glLightfv(GL_LIGHT0, GL_DIFFUSE, vec(0.9, 0.9, 0.9, 1.0))
 glLightfv(GL_LIGHT0, GL_SPECULAR, vec(1.0, 1.0, 1.0, 1.0))
@@ -105,6 +105,72 @@ glLightfv(GL_LIGHT0, GL_SPECULAR, vec(1.0, 1.0, 1.0, 1.0))
 glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, vec(0.8, 0.5, 0.5, 1.0))
 glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, vec(1, 1, 1, 1))
 glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 50)
+
+# create the Phong Shader by Jerome GUINOT aka 'JeGX' - jegx [at] ozone3d [dot] net
+# see http://www.ozone3d.net/tutorials/glsl_lighting_phong.php
+shader = Shader(['''
+varying vec3 normal, lightDir0, lightDir1, eyeVec;
+
+void main()
+{
+    normal = gl_NormalMatrix * gl_Normal;
+
+    vec3 vVertex = vec3(gl_ModelViewMatrix * gl_Vertex);
+
+    lightDir0 = vec3(gl_LightSource[0].position.xyz - vVertex);
+    lightDir1 = vec3(gl_LightSource[1].position.xyz - vVertex);
+    eyeVec = -vVertex;
+
+    gl_Position = ftransform();
+}
+'''], ['''
+varying vec3 normal, lightDir0, lightDir1, eyeVec;
+
+void main (void)
+{
+    vec4 final_color =
+    (gl_FrontLightModelProduct.sceneColor * gl_FrontMaterial.ambient) +
+    (gl_LightSource[0].ambient * gl_FrontMaterial.ambient) +
+    (gl_LightSource[1].ambient * gl_FrontMaterial.ambient);
+
+    vec3 N = normalize(normal);
+    vec3 L0 = normalize(lightDir0);
+    vec3 L1 = normalize(lightDir1);
+
+    float lambertTerm0 = dot(N,L0);
+    float lambertTerm1 = dot(N,L1);
+
+    if(lambertTerm0 > 0.0)
+    {
+        final_color += gl_LightSource[0].diffuse *
+                       gl_FrontMaterial.diffuse *
+                       lambertTerm0;
+
+        vec3 E = normalize(eyeVec);
+        vec3 R = reflect(-L0, N);
+        float specular = pow( max(dot(R, E), 0.0),
+                         gl_FrontMaterial.shininess );
+        final_color += gl_LightSource[0].specular *
+                       gl_FrontMaterial.specular *
+                       specular;
+    }
+    if(lambertTerm1 > 0.0)
+    {
+        final_color += gl_LightSource[1].diffuse *
+                       gl_FrontMaterial.diffuse *
+                       lambertTerm1;
+
+        vec3 E = normalize(eyeVec);
+        vec3 R = reflect(-L1, N);
+        float specular = pow( max(dot(R, E), 0.0),
+                         gl_FrontMaterial.shininess );
+        final_color += gl_LightSource[1].specular *
+                       gl_FrontMaterial.specular *
+                       specular;
+    }
+    gl_FragColor = final_color;
+}
+'''])
 
 
 def update(dt):
@@ -148,12 +214,14 @@ def on_draw():
     glPushMatrix()
     glRotatef(rot, 0, 1, 0)
 
+    shader.bind()
     glBindBuffer(GL_ARRAY_BUFFER, vbo_cube_norms)
     glNormalPointer(GL_FLOAT, 0, 0)
     glBindBuffer(GL_ARRAY_BUFFER, vbo_cube_verts)
     glVertexPointer(3, GL_FLOAT, 0, 0)
     glColor3f(0.8, 0.8, 0.8)
     glDrawArrays(GL_TRIANGLES, 0, len(cube_verts)/3)
+    shader.unbind()
 
     glPopMatrix()
 
