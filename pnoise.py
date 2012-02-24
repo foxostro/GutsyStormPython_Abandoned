@@ -1,13 +1,18 @@
 #!/usr/bin/env python
 # vim: et ts=4
 import math
-#import time
 import random
 
-# Generate the permutation table the Perlin noise generator.
-random.seed(0) # time.time())
 p = range(0,256) * 2
-random.shuffle(p)
+
+
+def shuffle():
+    """Shuffle the permutation table for the Perlin noise generator.
+    This randomizes the perlin noise generator according to the pseudorandom
+    generator used by random.shuffle().
+    """
+    global p
+    random.shuffle(p)
 
 
 def lerp(t, a, b):
@@ -91,3 +96,5 @@ def perlinNoiseWithMultipleOctaves(x, y, z, numOctaves):
         p = pow(2, i)
         c += perlinNoise(x * p, y * p, z * p) / p
     return c
+
+shuffle()
