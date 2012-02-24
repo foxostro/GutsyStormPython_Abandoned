@@ -7,19 +7,20 @@ import itertools
 import time
 import random
 import pnoise
-from PIL import Image
+import numpy
 
 
-RES_X = 80
-RES_Y = 40
-RES_Z = 80
+RES_X = 128
+RES_Y = 32
+RES_Z = 128
 L = 0.5 # Half-length of the cube along one side.
 useWireframe = False
 rot = 0.0
 
 # Generate a heightmap for the terrain.
-img = Image.new('RGB', (RES_X,RES_Z))
-pix = img.load()
+random.seed(time.time())
+pnoise.shuffle()
+voxelData = numpy.arange(RES_X*RES_Z).reshape(RES_X, RES_Z)
 freq = 0.8
 numOctaves = 1
 for x,z in itertools.product(range(0,RES_X), range(0,RES_Z)):
@@ -28,12 +29,12 @@ for x,z in itertools.product(range(0,RES_X), range(0,RES_Z)):
                                               0.0,
                                               numOctaves)
     c = int(n*(RES_Y/2)+(RES_Y/2-1))
-    pix[x,z] = (c,c,c)
-img.save("heightmap.png")
+    voxelData[x,z] = c
 
 
 def isGround(x,y,z):
-    return y < pix[x,z][0]
+    return y < voxelData[x,z]
+
 
 def vec(*args):
     "Create a ctypes array of floats"
@@ -56,10 +57,6 @@ except pyglet.window.NoSuchConfigException:
     window = pyglet.window.Window(width=640,
                                   height=480,
                                   resizable=True)
-
-random.seed(time.time())
-pnoise.shuffle()
-
 
 def getCubeVerts(x,y,z):
     return [ x-L, y+L, z+L,   x+L, y+L, z-L,   x-L, y+L, z-L, # Top Face
@@ -131,10 +128,9 @@ glVertexPointer(3, GL_FLOAT, 0, 0)
 
 glClearColor(0.2, 0.4, 0.5, 1.0)
 
-gluLookAt(0.0, 30.0, 50.0,  # Eye
+gluLookAt(0.0, 80.0, 120.0,  # Eye
           0.0, 0.0, 0.0,  # Center
           0.0, 1.0, 0.0)  # Up
-
 
 glEnable(GL_CULL_FACE)
 glFrontFace(GL_CCW)
@@ -144,14 +140,14 @@ glFrontFace(GL_CCW)
 glEnable(GL_LIGHTING)
 glEnable(GL_LIGHT0)
 
-glLightfv(GL_LIGHT0, GL_POSITION, vec(0.4, 1.0, 1.0, 0.0))
+glLightfv(GL_LIGHT0, GL_POSITION, vec(20.0, 40.0, 30.0, 0.0))
 glLightfv(GL_LIGHT0, GL_AMBIENT, vec(0.3, 0.3, 0.3, 1.0))
 glLightfv(GL_LIGHT0, GL_DIFFUSE, vec(0.9, 0.9, 0.9, 1.0))
 glLightfv(GL_LIGHT0, GL_SPECULAR, vec(1.0, 1.0, 1.0, 1.0))
 
 glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, vec(0.8, 0.5, 0.5, 1.0))
 glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, vec(1, 1, 1, 1))
-glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 50)
+glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10)
 
 # create the Phong Shader by Jerome GUINOT aka 'JeGX' - jegx [at] ozone3d [dot] net
 # see http://www.ozone3d.net/tutorials/glsl_lighting_phong.php
