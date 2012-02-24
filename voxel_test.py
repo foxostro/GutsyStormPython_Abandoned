@@ -136,8 +136,6 @@ gluLookAt(0.0, 30.0, 50.0,  # Eye
           0.0, 1.0, 0.0)  # Up
 
 
-glEnable(GL_DEPTH_TEST)
-
 glEnable(GL_CULL_FACE)
 glFrontFace(GL_CCW)
 
@@ -221,6 +219,8 @@ void main (void)
 }
 '''])
 
+fps_display = pyglet.clock.ClockDisplay()
+
 
 def update(dt):
     global rot
@@ -260,12 +260,38 @@ def on_draw():
     else:
         glPolygonMode(GL_FRONT, GL_FILL)
 
+    #############################################
+
+    glEnable(GL_DEPTH_TEST)
+    glEnable(GL_LIGHTING)
+
     glPushMatrix()
     glRotatef(rot, 0, 1, 0)
     shader.bind()
     glDrawArrays(GL_TRIANGLES, 0, numTrianglesInBatch)
     shader.unbind()
     glPopMatrix()
+
+    #############################################
+
+    glDisable(GL_DEPTH_TEST)
+    glDisable(GL_LIGHTING)
+
+    glMatrixMode(GL_PROJECTION)
+    glPushMatrix()
+    glLoadIdentity()
+    gluOrtho2D(-400, 400, -400, 400)
+
+    glMatrixMode(GL_MODELVIEW)
+    glPushMatrix()
+    glLoadIdentity()
+    glTranslatef(-400, 350, 0)
+    fps_display.draw()
+    glPopMatrix()
+
+    glMatrixMode(GL_PROJECTION)
+    glPopMatrix()
+    glMatrixMode(GL_MODELVIEW)
 
 
 pyglet.app.run()
