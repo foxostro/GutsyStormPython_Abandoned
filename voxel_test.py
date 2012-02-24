@@ -21,14 +21,14 @@ rot = 0.0
 random.seed(time.time())
 pnoise.shuffle()
 voxelData = numpy.arange(RES_X*RES_Z).reshape(RES_X, RES_Z)
-freq = 0.8
-numOctaves = 1
+freq = 0.4
 for x,z in itertools.product(range(0,RES_X), range(0,RES_Z)):
-    n = pnoise.perlinNoiseWithMultipleOctaves(float(x)/RES_X/freq,
-                                              float(z)/RES_Z/freq,
-                                              0.0,
-                                              numOctaves)
-    c = int(n*(RES_Y/2)+(RES_Y/2-1))
+    n = abs(pnoise.perlinNoise(float(x)/RES_X/freq,
+                               float(z)/RES_Z/freq,
+                               0.0))
+
+
+    c = int(RES_Y - n*RES_Y)
     voxelData[x,z] = c
 
 
