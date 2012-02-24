@@ -10,9 +10,10 @@ import pnoise
 from PIL import Image
 
 
-RES_X = 64
-RES_Y = 64
-RES_Z = 64
+RES_X = 80
+RES_Y = 40
+RES_Z = 80
+L = 0.5 # Half-length of the cube along one side.
 useWireframe = False
 rot = 0.0
 
@@ -43,43 +44,37 @@ def vec(*args):
 try:
     config = Config(sample_buffers=1,
                     samples=4,
-                    depth_size=24,
+                    depth_size=16,
                     double_buffer=True)
     window = pyglet.window.Window(width=640,
-                                  height=400,
+                                  height=480,
                                   resizable=True,
                                   config=config,
                                   vsync=True)
 except pyglet.window.NoSuchConfigException:
     # Well, if it's not supported then get whatever we can get.
     window = pyglet.window.Window(width=640,
-                                  height=400,
+                                  height=480,
                                   resizable=True)
 
 random.seed(time.time())
 pnoise.shuffle()
 
-vbo_cube_verts = GLuint()
-vbo_cube_norms = GLuint()
 
-glGenBuffers(1, pointer(vbo_cube_verts))
-glGenBuffers(1, pointer(vbo_cube_norms))
-
-L = 0.5 # Length of the cube along one side.
-cube_verts = [
--L, +L, +L,   +L, +L, -L,   -L, +L, -L, # Top Face
--L, +L, +L,   +L, +L, +L,   +L, +L, -L,
--L, -L, -L,   +L, -L, -L,   -L, -L, +L, # Bottom Face
-+L, -L, -L,   +L, -L, +L,   -L, -L, +L,
--L, -L, +L,   +L, +L, +L,   -L, +L, +L, # Front Face
--L, -L, +L,   +L, -L, +L,   +L, +L, +L,
--L, +L, -L,   +L, +L, -L,   -L, -L, -L, # Back Face
-+L, +L, -L,   +L, -L, -L,   -L, -L, -L,
-+L, +L, -L,   +L, +L, +L,   +L, -L, +L, # Right Face
-+L, -L, -L,   +L, +L, -L,   +L, -L, +L,
--L, -L, +L,   -L, +L, +L,   -L, +L, -L, # Left Face
--L, -L, +L,   -L, +L, -L,   -L, -L, -L,
-]
+def getCubeVerts(x,y,z):
+    return [ x-L, y+L, z+L,   x+L, y+L, z-L,   x-L, y+L, z-L, # Top Face
+             x-L, y+L, z+L,   x+L, y+L, z+L,   x+L, y+L, z-L,
+             x-L, y-L, z-L,   x+L, y-L, z-L,   x-L, y-L, z+L, # Bottom Face
+             x+L, y-L, z-L,   x+L, y-L, z+L,   x-L, y-L, z+L,
+             x-L, y-L, z+L,   x+L, y+L, z+L,   x-L, y+L, z+L, # Front Face
+             x-L, y-L, z+L,   x+L, y-L, z+L,   x+L, y+L, z+L,
+             x-L, y+L, z-L,   x+L, y+L, z-L,   x-L, y-L, z-L, # Back Face
+             x+L, y+L, z-L,   x+L, y-L, z-L,   x-L, y-L, z-L,
+             x+L, y+L, z-L,   x+L, y+L, z+L,   x+L, y-L, z+L, # Right Face
+             x+L, y-L, z-L,   x+L, y+L, z-L,   x+L, y-L, z+L,
+             x-L, y-L, z+L,   x-L, y+L, z+L,   x-L, y+L, z-L, # Left Face
+             x-L, y-L, z+L,   x-L, y+L, z-L,   x-L, y-L, z-L,
+           ]
 
 cube_norms = [
  0, +1,  0,    0, +1,  0,   0, +1,  0, # Top Face
@@ -96,28 +91,50 @@ cube_norms = [
 -1,  0,  0,   -1,  0,  0,  -1,  0,  0
 ]
 
-data = vec(*cube_verts)
-glBindBuffer(GL_ARRAY_BUFFER, vbo_cube_verts)
+# Generate one gigantic batch containing all polygon data.
+# Many of the faces are hidden, so there is room for improvement here.
+verts = []
+norms = []
+for x,y,z in itertools.product(range(0,RES_X),
+                               range(0,RES_Y),
+                               range(0,RES_Z)):
+    if isGround(x,y,z):
+        verts.extend(getCubeVerts(x - RES_X/2,
+                                  y - RES_Y/2,
+                                  z - RES_Z/2))
+        norms.extend(cube_norms)
+numTrianglesInBatch = len(verts)/3
+print "Generated Geometry"
+
+vbo_verts = GLuint()
+vbo_norms = GLuint()
+
+glGenBuffers(1, pointer(vbo_verts))
+glGenBuffers(1, pointer(vbo_norms))
+
+data = vec(*verts)
+glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
 glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
 del data
 
-data = vec(*cube_norms)
-glBindBuffer(GL_ARRAY_BUFFER, vbo_cube_norms)
+data = vec(*norms)
+glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
 glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
 del data
-
-glClearColor(0.2, 0.4, 0.5, 1.0)
-
-gluLookAt(10.0, 30.0, 30.0,  # Eye
-          0.0, 0.0, 0.0,  # Center
-          0.0, 1.0, 0.0)  # Up
 
 glEnableClientState(GL_VERTEX_ARRAY)
 glEnableClientState(GL_NORMAL_ARRAY)
-glBindBuffer(GL_ARRAY_BUFFER, vbo_cube_norms)
+glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
 glNormalPointer(GL_FLOAT, 0, 0)
-glBindBuffer(GL_ARRAY_BUFFER, vbo_cube_verts)
+glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
 glVertexPointer(3, GL_FLOAT, 0, 0)
+
+glClearColor(0.2, 0.4, 0.5, 1.0)
+
+gluLookAt(0.0, 30.0, 50.0,  # Eye
+          0.0, 0.0, 0.0,  # Center
+          0.0, 1.0, 0.0)  # Up
+
 
 glEnable(GL_DEPTH_TEST)
 
@@ -203,7 +220,6 @@ void main (void)
     gl_FragColor = final_color;
 }
 '''])
-#shader.bind()
 
 
 def update(dt):
@@ -245,18 +261,10 @@ def on_draw():
         glPolygonMode(GL_FRONT, GL_FILL)
 
     glPushMatrix()
-    #glRotatef(rot, 0, 1, 0)
-    glTranslatef(-RES_X/2, -RES_Y/2, -RES_Z/2)
-
-    for x,y,z in itertools.product(range(0,RES_X),
-                                   range(0,RES_Y),
-                                   range(0,RES_Z)):
-        if isGround(x,y,z):
-            glPushMatrix()
-            glTranslatef(x * L, y * L, z * L)
-            glDrawArrays(GL_TRIANGLES, 0, len(cube_verts)/3)
-            glPopMatrix()
-
+    glRotatef(rot, 0, 1, 0)
+    shader.bind()
+    glDrawArrays(GL_TRIANGLES, 0, numTrianglesInBatch)
+    shader.unbind()
     glPopMatrix()
 
 
