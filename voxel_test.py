@@ -10,9 +10,9 @@ import pnoise
 import numpy
 
 
-RES_X = 128
+RES_X = 64
 RES_Y = 32
-RES_Z = 128
+RES_Z = 64
 L = 0.5 # Half-length of the cube along one side.
 useWireframe = False
 rot = 0.0
@@ -21,23 +21,57 @@ shader = None
 fps_display = None
 
 
-def isGround(noiseSource, x, y, z):
-    "Returns True if the point is ground, False otherwise."
-    freq = 0.4
-    n = abs(noiseSource.getValue(float(x)/RES_X/freq,
-                                 float(z)/RES_Z/freq,
-                                 0.0))
-    c = int(RES_Y - n*RES_Y)
-    return y < c
+def groundGradient(p):
+    """Return a value between -1 and +1 so that a line through the y-axis maps
+    to a smooth gradient of values from -1 to +1.
+    """
+    y = p[1]
+    if y < 0.0:
+        return -1
+    elif y > 1.0:
+        return +1
+    else:
+        return 2.0*y - 1.0
+
+
+def isGround(noiseSource0, noiseSource1, p):
+    """"Returns True if the point is ground, False otherwise.
+    """
+    freq0 = 1.0
+    freq1 = 1.0
+    numOctaves0 = 4
+    numOctaves1 = 4
+    turbScaleX = 1.3
+    turbScaleY = 1.0
+    n = noiseSource0.getValueWithMultipleOctaves(float(p[0])*freq0,
+                                                 float(p[1])*freq0,
+                                                 float(p[2])*freq0,
+                                                 numOctaves0)
+    yFreq = turbScaleX * ((n+1) / 2.0)
+    t = turbScaleY * noiseSource1.getValueWithMultipleOctaves(float(p[0])*freq1,
+                                                              float(p[1])*yFreq,
+                                                              float(p[2])*freq1,
+                                                              numOctaves1)
+    pPrime = (p[0], p[1] + t, p[1])
+    return groundGradient(pPrime) <= 0
 
 
 def computeTerrainData():
-    noiseSource = pnoise.PerlinNoise()
+    noiseSource0 = pnoise.PerlinNoise()
+    noiseSource1 = pnoise.PerlinNoise()
     voxelData = numpy.arange(RES_X*RES_Y*RES_Z).reshape(RES_X, RES_Y, RES_Z)
+
+    # Sample a unit cube of the isGround function and save to voxelData.
+    # Sampling resolution is specified by RES_X, RES_Y, and RES_Z.
     for x,y,z in itertools.product(range(0,RES_X),
                                    range(0,RES_Y),
                                    range(0,RES_Z)):
-        voxelData[x,y,z] = isGround(noiseSource, x, y, z)
+        # p should range from 0 to +1 on each axis
+        p = (float(x) / RES_X,
+             float(y) / RES_Y,
+             float(z) / RES_Z)
+        voxelData[x, y, z] = isGround(noiseSource0, noiseSource1, p)
+
     return voxelData
 
 
@@ -153,9 +187,9 @@ def bindNorms(vbo_norms):
 def setupGLState():
     glClearColor(0.2, 0.4, 0.5, 1.0)
 
-    gluLookAt(0.0, 80.0, 120.0,  # Eye
-              0.0,  0.0,   0.0,  # Center
-              0.0,  1.0,   0.0)  # Up
+    gluLookAt(10.0, 50.0, 64.0,  # Eye
+               0.0,  0.0,  0.0,  # Center
+               0.0,  1.0,  0.0)  # Up
 
     glEnable(GL_CULL_FACE)
     glFrontFace(GL_CCW)
@@ -180,7 +214,7 @@ def createShaderObject():
     # create the Phong Shader by Jerome GUINOT aka 'JeGX' - jegx [at] ozone3d [dot] net
     # see http://www.ozone3d.net/tutorials/glsl_lighting_phong.php
     return Shader(['''
-    varying vec3 normal, lightDir0, lightDir1, eyeVec;
+    varying vec3 normal, lightDir0, eyeVec;
 
     void main()
     {
@@ -189,27 +223,23 @@ def createShaderObject():
         vec3 vVertex = vec3(gl_ModelViewMatrix * gl_Vertex);
 
         lightDir0 = vec3(gl_LightSource[0].position.xyz - vVertex);
-        lightDir1 = vec3(gl_LightSource[1].position.xyz - vVertex);
         eyeVec = -vVertex;
 
         gl_Position = ftransform();
     }
     '''], ['''
-    varying vec3 normal, lightDir0, lightDir1, eyeVec;
+    varying vec3 normal, lightDir0, eyeVec;
 
     void main (void)
     {
         vec4 final_color =
         (gl_FrontLightModelProduct.sceneColor * gl_FrontMaterial.ambient) +
-        (gl_LightSource[0].ambient * gl_FrontMaterial.ambient) +
-        (gl_LightSource[1].ambient * gl_FrontMaterial.ambient);
+        (gl_LightSource[0].ambient * gl_FrontMaterial.ambient);
 
         vec3 N = normalize(normal);
         vec3 L0 = normalize(lightDir0);
-        vec3 L1 = normalize(lightDir1);
 
         float lambertTerm0 = dot(N,L0);
-        float lambertTerm1 = dot(N,L1);
 
         if(lambertTerm0 > 0.0)
         {
@@ -222,20 +252,6 @@ def createShaderObject():
             float specular = pow( max(dot(R, E), 0.0),
                              gl_FrontMaterial.shininess );
             final_color += gl_LightSource[0].specular *
-                           gl_FrontMaterial.specular *
-                           specular;
-        }
-        if(lambertTerm1 > 0.0)
-        {
-            final_color += gl_LightSource[1].diffuse *
-                           gl_FrontMaterial.diffuse *
-                           lambertTerm1;
-
-            vec3 E = normalize(eyeVec);
-            vec3 R = reflect(-L1, N);
-            float specular = pow( max(dot(R, E), 0.0),
-                             gl_FrontMaterial.shininess );
-            final_color += gl_LightSource[1].specular *
                            gl_FrontMaterial.specular *
                            specular;
         }
@@ -277,7 +293,7 @@ def main():
 
 def update(dt):
     global rot
-    rot += 20 * dt
+    rot += 5 * dt
     rot %= 360
 pyglet.clock.schedule(update)
 
