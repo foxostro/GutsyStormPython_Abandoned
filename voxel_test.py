@@ -16,24 +16,29 @@ RES_Z = 128
 L = 0.5 # Half-length of the cube along one side.
 useWireframe = False
 rot = 0.0
-
-# Generate a heightmap for the terrain.
-random.seed(time.time())
-pnoise.shuffle()
-voxelData = numpy.arange(RES_X*RES_Z).reshape(RES_X, RES_Z)
-freq = 0.4
-for x,z in itertools.product(range(0,RES_X), range(0,RES_Z)):
-    n = abs(pnoise.perlinNoise(float(x)/RES_X/freq,
-                               float(z)/RES_Z/freq,
-                               0.0))
+numTrianglesInBatch = None
+shader = None
+fps_display = None
 
 
+def isGround(noiseSource, x, y, z):
+    "Returns True if the point is ground, False otherwise."
+    freq = 0.4
+    n = abs(noiseSource.getValue(float(x)/RES_X/freq,
+                                 float(z)/RES_Z/freq,
+                                 0.0))
     c = int(RES_Y - n*RES_Y)
-    voxelData[x,z] = c
+    return y < c
 
 
-def isGround(x,y,z):
-    return y < voxelData[x,z]
+def computeTerrainData():
+    noiseSource = pnoise.PerlinNoise()
+    voxelData = numpy.arange(RES_X*RES_Y*RES_Z).reshape(RES_X, RES_Y, RES_Z)
+    for x,y,z in itertools.product(range(0,RES_X),
+                                   range(0,RES_Y),
+                                   range(0,RES_Z)):
+        voxelData[x,y,z] = isGround(noiseSource, x, y, z)
+    return voxelData
 
 
 def vec(*args):
@@ -41,22 +46,28 @@ def vec(*args):
     return (GLfloat * len(args))(*args)
 
 
-# Try to create a window that support antialiasing.
-try:
-    config = Config(sample_buffers=1,
-                    samples=4,
-                    depth_size=16,
-                    double_buffer=True)
-    window = pyglet.window.Window(width=640,
-                                  height=480,
-                                  resizable=True,
-                                  config=config,
-                                  vsync=True)
-except pyglet.window.NoSuchConfigException:
-    # Well, if it's not supported then get whatever we can get.
-    window = pyglet.window.Window(width=640,
-                                  height=480,
-                                  resizable=True)
+def createWindow():
+    "Creates a Pyglet window."
+    # Try to create a window that support antialiasing.
+    try:
+        config = Config(sample_buffers=1,
+                        samples=4,
+                        depth_size=16,
+                        double_buffer=True)
+        window = pyglet.window.Window(width=640,
+                                      height=480,
+                                      resizable=True,
+                                      config=config,
+                                      vsync=True)
+    except pyglet.window.NoSuchConfigException:
+        # Well, if it's not supported then get whatever we can get.
+        window = pyglet.window.Window(width=640,
+                                      height=480,
+                                      resizable=True)
+
+    return window
+window = createWindow()
+
 
 def getCubeVerts(x,y,z):
     return [ x-L, y+L, z+L,   x+L, y+L, z-L,   x-L, y+L, z-L, # Top Face
@@ -73,149 +84,195 @@ def getCubeVerts(x,y,z):
              x-L, y-L, z+L,   x-L, y+L, z-L,   x-L, y-L, z-L,
            ]
 
-cube_norms = [
- 0, +1,  0,    0, +1,  0,   0, +1,  0, # Top Face
- 0, +1,  0,    0, +1,  0,   0, +1,  0,
- 0, -1,  0,    0, -1,  0,   0, -1,  0, # Bottom Face
- 0, -1,  0,    0, -1,  0,   0, -1,  0,
- 0,  0, +1,    0,  0, +1,   0,  0, +1, # Front Face
- 0,  0, +1,    0,  0, +1,   0,  0, +1,
- 0,  0, -1,    0,  0, -1,   0,  0, -1, # Back Face
- 0,  0, -1,    0,  0, -1,   0,  0, -1,
-+1,  0,  0,   +1,  0,  0,  +1,  0,  0, # Right Face
-+1,  0,  0,   +1,  0,  0,  +1,  0,  0,
--1,  0,  0,   -1,  0,  0,  -1,  0,  0, # Left Face
--1,  0,  0,   -1,  0,  0,  -1,  0,  0
-]
 
-# Generate one gigantic batch containing all polygon data.
-# Many of the faces are hidden, so there is room for improvement here.
-verts = []
-norms = []
-for x,y,z in itertools.product(range(0,RES_X),
-                               range(0,RES_Y),
-                               range(0,RES_Z)):
-    if isGround(x,y,z):
-        verts.extend(getCubeVerts(x - RES_X/2,
-                                  y - RES_Y/2,
-                                  z - RES_Z/2))
-        norms.extend(cube_norms)
-numTrianglesInBatch = len(verts)/3
-print "Generated Geometry"
+def generateGeometry(voxelData):
+    """Generate one gigantic batch containing all polygon data.
+    Many of the faces are hidden, so there is room for improvement here.
+    """
+    cube_norms = [
+     0, +1,  0,    0, +1,  0,   0, +1,  0, # Top Face
+     0, +1,  0,    0, +1,  0,   0, +1,  0,
+     0, -1,  0,    0, -1,  0,   0, -1,  0, # Bottom Face
+     0, -1,  0,    0, -1,  0,   0, -1,  0,
+     0,  0, +1,    0,  0, +1,   0,  0, +1, # Front Face
+     0,  0, +1,    0,  0, +1,   0,  0, +1,
+     0,  0, -1,    0,  0, -1,   0,  0, -1, # Back Face
+     0,  0, -1,    0,  0, -1,   0,  0, -1,
+    +1,  0,  0,   +1,  0,  0,  +1,  0,  0, # Right Face
+    +1,  0,  0,   +1,  0,  0,  +1,  0,  0,
+    -1,  0,  0,   -1,  0,  0,  -1,  0,  0, # Left Face
+    -1,  0,  0,   -1,  0,  0,  -1,  0,  0
+    ]
+    verts = []
+    norms = []
 
-vbo_verts = GLuint()
-vbo_norms = GLuint()
+    for x,y,z in itertools.product(range(0,RES_X),
+                                   range(0,RES_Y),
+                                   range(0,RES_Z)):
+        if voxelData[x,y,z]:
+            verts.extend(getCubeVerts(x - RES_X/2,
+                                      y - RES_Y/2,
+                                      z - RES_Z/2))
+            norms.extend(cube_norms)
 
-glGenBuffers(1, pointer(vbo_verts))
-glGenBuffers(1, pointer(vbo_norms))
+    return verts, norms
 
-data = vec(*verts)
-glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
-glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
-del data
 
-data = vec(*norms)
-glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
-glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
-del data
+def createVertexBufferObjects(verts, norms):
+    vbo_verts = GLuint()
+    vbo_norms = GLuint()
 
-glEnableClientState(GL_VERTEX_ARRAY)
-glEnableClientState(GL_NORMAL_ARRAY)
-glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
-glNormalPointer(GL_FLOAT, 0, 0)
-glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
-glVertexPointer(3, GL_FLOAT, 0, 0)
+    glGenBuffers(1, pointer(vbo_verts))
+    glGenBuffers(1, pointer(vbo_norms))
 
-glClearColor(0.2, 0.4, 0.5, 1.0)
+    data = vec(*verts)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
+    glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
+    del data
 
-gluLookAt(0.0, 80.0, 120.0,  # Eye
-          0.0, 0.0, 0.0,  # Center
-          0.0, 1.0, 0.0)  # Up
+    data = vec(*norms)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
+    glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
+    del data
 
-glEnable(GL_CULL_FACE)
-glFrontFace(GL_CCW)
+    return vbo_verts, vbo_norms
 
-# Simple light setup.  On Windows GL_LIGHT0 is enabled by default, but this is
-# not the case on Linux or Mac, so remember to always include it.
-glEnable(GL_LIGHTING)
-glEnable(GL_LIGHT0)
 
-glLightfv(GL_LIGHT0, GL_POSITION, vec(20.0, 40.0, 30.0, 0.0))
-glLightfv(GL_LIGHT0, GL_AMBIENT, vec(0.3, 0.3, 0.3, 1.0))
-glLightfv(GL_LIGHT0, GL_DIFFUSE, vec(0.9, 0.9, 0.9, 1.0))
-glLightfv(GL_LIGHT0, GL_SPECULAR, vec(1.0, 1.0, 1.0, 1.0))
+def bindVerts(vbo_verts):
+    glEnableClientState(GL_VERTEX_ARRAY)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
+    glVertexPointer(3, GL_FLOAT, 0, 0)
 
-glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, vec(0.8, 0.5, 0.5, 1.0))
-glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, vec(1, 1, 1, 1))
-glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10)
 
-# create the Phong Shader by Jerome GUINOT aka 'JeGX' - jegx [at] ozone3d [dot] net
-# see http://www.ozone3d.net/tutorials/glsl_lighting_phong.php
-shader = Shader(['''
-varying vec3 normal, lightDir0, lightDir1, eyeVec;
+def bindNorms(vbo_norms):
+    glEnableClientState(GL_NORMAL_ARRAY)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
+    glNormalPointer(GL_FLOAT, 0, 0)
 
-void main()
-{
-    normal = gl_NormalMatrix * gl_Normal;
 
-    vec3 vVertex = vec3(gl_ModelViewMatrix * gl_Vertex);
+def setupGLState():
+    glClearColor(0.2, 0.4, 0.5, 1.0)
 
-    lightDir0 = vec3(gl_LightSource[0].position.xyz - vVertex);
-    lightDir1 = vec3(gl_LightSource[1].position.xyz - vVertex);
-    eyeVec = -vVertex;
+    gluLookAt(0.0, 80.0, 120.0,  # Eye
+              0.0,  0.0,   0.0,  # Center
+              0.0,  1.0,   0.0)  # Up
 
-    gl_Position = ftransform();
-}
-'''], ['''
-varying vec3 normal, lightDir0, lightDir1, eyeVec;
+    glEnable(GL_CULL_FACE)
+    glFrontFace(GL_CCW)
 
-void main (void)
-{
-    vec4 final_color =
-    (gl_FrontLightModelProduct.sceneColor * gl_FrontMaterial.ambient) +
-    (gl_LightSource[0].ambient * gl_FrontMaterial.ambient) +
-    (gl_LightSource[1].ambient * gl_FrontMaterial.ambient);
+    # Simple light setup.  On Windows GL_LIGHT0 is enabled by default, but this is
+    # not the case on Linux or Mac, so remember to always include it.
+    glEnable(GL_LIGHTING)
+    glEnable(GL_LIGHT0)
 
-    vec3 N = normalize(normal);
-    vec3 L0 = normalize(lightDir0);
-    vec3 L1 = normalize(lightDir1);
+    glLightfv(GL_LIGHT0, GL_POSITION, vec(20.0, 40.0, 30.0, 0.0))
+    glLightfv(GL_LIGHT0, GL_AMBIENT, vec(0.3, 0.3, 0.3, 1.0))
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, vec(0.9, 0.9, 0.9, 1.0))
+    glLightfv(GL_LIGHT0, GL_SPECULAR, vec(1.0, 1.0, 1.0, 1.0))
 
-    float lambertTerm0 = dot(N,L0);
-    float lambertTerm1 = dot(N,L1);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, vec(0.8, 0.5, 0.5, 1.0))
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, vec(1, 1, 1, 1))
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10)
 
-    if(lambertTerm0 > 0.0)
+
+def createShaderObject():
+    "Create a shader to apply to the terrain."
+    # create the Phong Shader by Jerome GUINOT aka 'JeGX' - jegx [at] ozone3d [dot] net
+    # see http://www.ozone3d.net/tutorials/glsl_lighting_phong.php
+    return Shader(['''
+    varying vec3 normal, lightDir0, lightDir1, eyeVec;
+
+    void main()
     {
-        final_color += gl_LightSource[0].diffuse *
-                       gl_FrontMaterial.diffuse *
-                       lambertTerm0;
+        normal = gl_NormalMatrix * gl_Normal;
 
-        vec3 E = normalize(eyeVec);
-        vec3 R = reflect(-L0, N);
-        float specular = pow( max(dot(R, E), 0.0),
-                         gl_FrontMaterial.shininess );
-        final_color += gl_LightSource[0].specular *
-                       gl_FrontMaterial.specular *
-                       specular;
+        vec3 vVertex = vec3(gl_ModelViewMatrix * gl_Vertex);
+
+        lightDir0 = vec3(gl_LightSource[0].position.xyz - vVertex);
+        lightDir1 = vec3(gl_LightSource[1].position.xyz - vVertex);
+        eyeVec = -vVertex;
+
+        gl_Position = ftransform();
     }
-    if(lambertTerm1 > 0.0)
+    '''], ['''
+    varying vec3 normal, lightDir0, lightDir1, eyeVec;
+
+    void main (void)
     {
-        final_color += gl_LightSource[1].diffuse *
-                       gl_FrontMaterial.diffuse *
-                       lambertTerm1;
+        vec4 final_color =
+        (gl_FrontLightModelProduct.sceneColor * gl_FrontMaterial.ambient) +
+        (gl_LightSource[0].ambient * gl_FrontMaterial.ambient) +
+        (gl_LightSource[1].ambient * gl_FrontMaterial.ambient);
 
-        vec3 E = normalize(eyeVec);
-        vec3 R = reflect(-L1, N);
-        float specular = pow( max(dot(R, E), 0.0),
-                         gl_FrontMaterial.shininess );
-        final_color += gl_LightSource[1].specular *
-                       gl_FrontMaterial.specular *
-                       specular;
+        vec3 N = normalize(normal);
+        vec3 L0 = normalize(lightDir0);
+        vec3 L1 = normalize(lightDir1);
+
+        float lambertTerm0 = dot(N,L0);
+        float lambertTerm1 = dot(N,L1);
+
+        if(lambertTerm0 > 0.0)
+        {
+            final_color += gl_LightSource[0].diffuse *
+                           gl_FrontMaterial.diffuse *
+                           lambertTerm0;
+
+            vec3 E = normalize(eyeVec);
+            vec3 R = reflect(-L0, N);
+            float specular = pow( max(dot(R, E), 0.0),
+                             gl_FrontMaterial.shininess );
+            final_color += gl_LightSource[0].specular *
+                           gl_FrontMaterial.specular *
+                           specular;
+        }
+        if(lambertTerm1 > 0.0)
+        {
+            final_color += gl_LightSource[1].diffuse *
+                           gl_FrontMaterial.diffuse *
+                           lambertTerm1;
+
+            vec3 E = normalize(eyeVec);
+            vec3 R = reflect(-L1, N);
+            float specular = pow( max(dot(R, E), 0.0),
+                             gl_FrontMaterial.shininess );
+            final_color += gl_LightSource[1].specular *
+                           gl_FrontMaterial.specular *
+                           specular;
+        }
+        gl_FragColor = final_color;
     }
-    gl_FragColor = final_color;
-}
-'''])
+    '''])
 
-fps_display = pyglet.clock.ClockDisplay()
+
+def main():
+    global window
+    global numTrianglesInBatch
+    global shader
+    global fps_display
+
+    random.seed(time.time())
+    print "Seeded random number generator"
+
+    setupGLState()
+    shader = createShaderObject()
+    fps_display = pyglet.clock.ClockDisplay()
+    print "Setup initial OpenGL state."
+
+    voxelData = computeTerrainData()
+    print "Computed terrain"
+
+    verts, norms = generateGeometry(voxelData)
+    numTrianglesInBatch = len(verts)/3
+    print "Generated Geometry"
+
+    vbo_verts, vbo_norms = createVertexBufferObjects(verts, norms)
+    print "Created vertex buffer objects"
+
+    bindVerts(vbo_verts)
+    bindNorms(vbo_norms)
+    print "Uploaded geometry to the GPU"
+
+    pyglet.app.run()
 
 
 def update(dt):
@@ -290,4 +347,4 @@ def on_draw():
     glMatrixMode(GL_MODELVIEW)
 
 
-pyglet.app.run()
+main()
