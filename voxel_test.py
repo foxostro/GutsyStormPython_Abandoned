@@ -15,7 +15,6 @@ import numpy
 RES_X = 64
 RES_Y = 32
 RES_Z = 64
-L = 0.5 # Half-length of the cube along one side.
 useWireframe = False
 rot = 0.0
 numTrianglesInBatch = None
@@ -105,51 +104,71 @@ def createWindow():
 window = createWindow()
 
 
-def getCubeVerts(x,y,z):
-    return [ x-L, y+L, z+L,   x+L, y+L, z-L,   x-L, y+L, z-L, # Top Face
-             x-L, y+L, z+L,   x+L, y+L, z+L,   x+L, y+L, z-L,
-             x-L, y-L, z-L,   x+L, y-L, z-L,   x-L, y-L, z+L, # Bottom Face
-             x+L, y-L, z-L,   x+L, y-L, z+L,   x-L, y-L, z+L,
-             x-L, y-L, z+L,   x+L, y+L, z+L,   x-L, y+L, z+L, # Front Face
-             x-L, y-L, z+L,   x+L, y-L, z+L,   x+L, y+L, z+L,
-             x-L, y+L, z-L,   x+L, y+L, z-L,   x-L, y-L, z-L, # Back Face
-             x+L, y+L, z-L,   x+L, y-L, z-L,   x-L, y-L, z-L,
-             x+L, y+L, z-L,   x+L, y+L, z+L,   x+L, y-L, z+L, # Right Face
-             x+L, y-L, z-L,   x+L, y+L, z-L,   x+L, y-L, z+L,
-             x-L, y-L, z+L,   x-L, y+L, z+L,   x-L, y+L, z-L, # Left Face
-             x-L, y-L, z+L,   x-L, y+L, z-L,   x-L, y-L, z-L,
-           ]
-
-
 def generateGeometry(voxelData):
     """Generate one gigantic batch containing all polygon data.
     Many of the faces are hidden, so there is room for improvement here.
     """
-    cube_norms = [
-     0, +1,  0,    0, +1,  0,   0, +1,  0, # Top Face
-     0, +1,  0,    0, +1,  0,   0, +1,  0,
-     0, -1,  0,    0, -1,  0,   0, -1,  0, # Bottom Face
-     0, -1,  0,    0, -1,  0,   0, -1,  0,
-     0,  0, +1,    0,  0, +1,   0,  0, +1, # Front Face
-     0,  0, +1,    0,  0, +1,   0,  0, +1,
-     0,  0, -1,    0,  0, -1,   0,  0, -1, # Back Face
-     0,  0, -1,    0,  0, -1,   0,  0, -1,
-    +1,  0,  0,   +1,  0,  0,  +1,  0,  0, # Right Face
-    +1,  0,  0,   +1,  0,  0,  +1,  0,  0,
-    -1,  0,  0,   -1,  0,  0,  -1,  0,  0, # Left Face
-    -1,  0,  0,   -1,  0,  0,  -1,  0,  0
-    ]
+    def getVoxelData(x, y, z):
+        if x>=0 and x<RES_X and \
+           y>=0 and y<RES_Y and \
+           z>=0 and z<RES_Z:
+            return voxelData[x,y,z]
+        else:
+            return False
+
     verts = []
     norms = []
+    L = 0.5 # Half-length of the cube along one side.
 
-    for x,y,z in itertools.product(range(0,RES_X),
-                                   range(0,RES_Y),
-                                   range(0,RES_Z)):
-        if voxelData[x,y,z]:
-            verts.extend(getCubeVerts(x - RES_X/2,
-                                      y - RES_Y/2,
-                                      z - RES_Z/2))
-            norms.extend(cube_norms)
+    for x,y,z in itertools.product(range(0, RES_X), range(0, RES_Y), range(0, RES_Z)):
+        if not voxelData[x,y,z]:
+            continue
+
+        X = x - RES_X/2
+        Y = y - RES_Y/2
+        Z = z - RES_Z/2
+
+        # Top Face
+        if not getVoxelData(x,y+1,z):
+            verts.extend([X-L, Y+L, Z+L,  X+L, Y+L, Z-L,  X-L, Y+L, Z-L,
+                          X-L, Y+L, Z+L,  X+L, Y+L, Z+L,  X+L, Y+L, Z-L])
+            norms.extend([  0,  +1,   0,    0,  +1,   0,    0,  +1,   0,
+                            0,  +1,   0,    0,  +1,   0,    0,  +1,   0])
+
+        # Bottom Face
+        if not getVoxelData(x,y-1,z):
+            verts.extend([X-L, Y-L, Z-L,  X+L, Y-L, Z-L,  X-L, Y-L, Z+L,
+                          X+L, Y-L, Z-L,  X+L, Y-L, Z+L,  X-L, Y-L, Z+L])
+            norms.extend([  0,  -1,   0,      0, -1,  0,    0,  -1,   0,
+                            0,  -1,   0,      0, -1,  0,    0,  -1,   0])
+
+        # Front Face
+        if not getVoxelData(x,y,z+1):
+            verts.extend([X-L, Y-L, Z+L,  X+L, Y+L, Z+L,  X-L, Y+L, Z+L,
+                          X-L, Y-L, Z+L,  X+L, Y-L, Z+L,  X+L, Y+L, Z+L])
+            norms.extend([  0,   0,  +1,    0,   0,  +1,    0,   0,  +1,
+                            0,   0,  +1,    0,   0,  +1,    0,   0,  +1])
+
+        # Back Face
+        if not getVoxelData(x,y,z-1):
+            verts.extend([X-L, Y+L, Z-L,  X+L, Y+L, Z-L,  X-L, Y-L, Z-L,
+                          X+L, Y+L, Z-L,  X+L, Y-L, Z-L,  X-L, Y-L, Z-L])
+            norms.extend([  0,   0,  -1,    0,   0,  -1,    0,   0,  -1,
+                            0,   0,  -1,    0,   0,  -1,    0,   0,  -1])
+
+        # Right Face
+        if not getVoxelData(x+1,y,z):
+            verts.extend([X+L, Y+L, Z-L,  X+L, Y+L, Z+L,  X+L, Y-L, Z+L,
+                          X+L, Y-L, Z-L,  X+L, Y+L, Z-L,  X+L, Y-L, Z+L])
+            norms.extend([ +1,   0,   0,   +1,   0,   0,   +1,   0,   0,
+                           +1,   0,   0,   +1,   0,   0,   +1,   0,   0])
+
+        # Left Face
+        if not getVoxelData(x-1,y,z):
+            verts.extend([X-L, Y-L, Z+L,  X-L, Y+L, Z+L,  X-L, Y+L, Z-L,
+                          X-L, Y-L, Z+L,  X-L, Y+L, Z-L,  X-L, Y-L, Z-L])
+            norms.extend([ -1,   0,   0,   -1,   0,   0,   -1,   0,   0,
+                           -1,   0,   0,   -1,   0,   0,   -1,   0,   0])
 
     return verts, norms
 
@@ -265,12 +284,18 @@ def main():
     fps_display = pyglet.clock.ClockDisplay()
     print "Setup initial OpenGL state."
 
+    a = time.time()
     voxelData = computeTerrainData()
-    print "Computed terrain"
+    b = time.time()
+    print "Computed terrain (took %.1fs)" % (b-a)
+    del a, b
 
+    a = time.time()
     verts, norms = generateGeometry(voxelData)
     numTrianglesInBatch = len(verts)/3
-    print "Generated Geometry"
+    b = time.time()
+    print "Generated Geometry (took %.1fs)" % (b-a)
+    del a, b
 
     vbo_verts = createVertexBufferObject(verts)
     del verts
