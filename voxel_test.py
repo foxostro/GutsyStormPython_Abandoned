@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# vim:ts=4:sw=4:et:filetype=python
 import pyglet
 from pyglet.gl import *
 from pyglet.window import key
@@ -152,24 +154,13 @@ def generateGeometry(voxelData):
     return verts, norms
 
 
-def createVertexBufferObjects(verts, norms):
+def createVertexBufferObject(verts):
     vbo_verts = GLuint()
-    vbo_norms = GLuint()
-
     glGenBuffers(1, pointer(vbo_verts))
-    glGenBuffers(1, pointer(vbo_norms))
-
     data = vec(*verts)
     glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
     glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
-    del data
-
-    data = vec(*norms)
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
-    glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
-    del data
-
-    return vbo_verts, vbo_norms
+    return vbo_verts
 
 
 def bindVerts(vbo_verts):
@@ -281,7 +272,10 @@ def main():
     numTrianglesInBatch = len(verts)/3
     print "Generated Geometry"
 
-    vbo_verts, vbo_norms = createVertexBufferObjects(verts, norms)
+    vbo_verts = createVertexBufferObject(verts)
+    del verts
+    vbo_norms = createVertexBufferObject(norms)
+    del norms
     print "Created vertex buffer objects"
 
     bindVerts(vbo_verts)
