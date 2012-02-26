@@ -2,7 +2,7 @@
 # vim: et ts=4
 
 from PIL import Image
-import pnoise
+from pnoise import PerlinNoise
 import random
 import time
 import itertools
@@ -16,14 +16,15 @@ def generatePerlin(fn, w, h, freq, numOctaves):
     freq - The frequency of the noise.
     numOctaves = The number of octaves of noise to use.
     """
+    noiseSource = PerlinNoise()
     img = Image.new('RGB', (w,h))
     pix = img.load()
 
     for x, y in itertools.product(range(0,w), range(0,h)):
-        n = pnoise.perlinNoiseWithMultipleOctaves(float(x)/w/freq,
-                                                  float(y)/h/freq,
-                                                  0.0,
-                                                  numOctaves)
+        n = noiseSource.getValueWithMultipleOctaves(float(x)/w/freq,
+                                                    float(y)/h/freq,
+                                                    0.0,
+                                                    numOctaves)
         c = int(n*128+127)
         pix[x,y] = (c,c,c)
 
@@ -38,19 +39,19 @@ def generateRidgedMulitFractal(fn, w, h, freq):
     freq - The frequency of the noise.
     numOctaves = The number of octaves of noise to use.
     """
+    noiseSource = PerlinNoise()
     img = Image.new('RGB', (w,h))
     pix = img.load()
 
     for x, y in itertools.product(range(0,w), range(0,h)):
-        n = abs(pnoise.perlinNoise(float(x)/w/freq,
-                                   float(y)/h/freq,
-                                   0.0))
+        n = abs(noiseSource.getValue(float(x)/w/freq,
+                                     float(y)/h/freq,
+                                     0.0))
         c = int(255 - n*255)
         pix[x,y] = (c,c,c)
 
     img.save(fn)
 
 random.seed(time.time())
-pnoise.shuffle()
 generatePerlin("test.png", 128, 128, 0.4, 4)
 generateRidgedMulitFractal("test2.png", 128, 128, 0.4)

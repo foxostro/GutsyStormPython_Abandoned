@@ -3,17 +3,6 @@
 import math
 import random
 
-p = range(0,256) * 2
-
-
-def shuffle():
-    """Shuffle the permutation table for the Perlin noise generator.
-    This randomizes the perlin noise generator according to the pseudorandom
-    generator used by random.shuffle().
-    """
-    global p
-    random.shuffle(p)
-
 
 def lerp(t, a, b):
     return a + t * (b - a)
@@ -42,10 +31,8 @@ def grad(hash, x, y, z):
     return u + v
 
 
-def perlinNoise(x, y, z):
+def perlinNoise(p, x, y, z):
     "Computes a perlin noise value at the specified position"
-    global p
-
     X = int(math.floor(x)) & 255
     Y = int(math.floor(y)) & 255
     Z = int(math.floor(z)) & 255
@@ -87,14 +74,24 @@ def perlinNoise(x, y, z):
                 lerp(v, lerp(u, gradAA1,gradBA1),lerp(u, gradAB1,gradBB1)))
 
 
-def perlinNoiseWithMultipleOctaves(x, y, z, numOctaves):
+def perlinNoiseWithMultipleOctaves(p, x, y, z, numOctaves):
     """Computes a perlin noise value at the specified position with multiple
     octaves of noise layered over top of it.
     """
     c = 0
     for i in range(1, numOctaves+1):
-        p = pow(2, i)
-        c += perlinNoise(x * p, y * p, z * p) / p
+        a = pow(2, i)
+        c += perlinNoise(p, x * a, y * a, z * a) / a
     return c
 
-shuffle()
+
+class PerlinNoise:
+    def __init__(self):
+        self.p = range(0, 256) * 2
+        random.shuffle(self.p)
+
+    def getValue(self, x, y, z):
+        return perlinNoise(self.p, x, y, z)
+
+    def getValueWithMultipleOctaves(self, x, y, z, numOctaves):
+        return perlinNoiseWithMultipleOctaves(self.p, x, y, z, numOctaves)
