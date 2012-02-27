@@ -12,14 +12,31 @@ import pnoise
 import numpy
 
 
-RES_X = 64
-RES_Y = 32
-RES_Z = 64
+RES_X = 160
+RES_Y = 48
+RES_Z = 160
 useWireframe = False
 rot = 0.0
 numTrianglesInBatch = None
 shader = None
 fps_display = None
+chunks = []
+
+
+class Chunk:
+    def __init__(self, vbo_verts, vbo_norms, numTrianglesInBatch):
+        self.vbo_verts = vbo_verts
+        self.vbo_norms = vbo_norms
+        self.numTrianglesInBatch = numTrianglesInBatch
+
+    def bind(self):
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo_verts)
+        glVertexPointer(3, GL_FLOAT, 0, 0)
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo_norms)
+        glNormalPointer(GL_FLOAT, 0, 0)
+
+    def draw(self):
+        glDrawArrays(GL_TRIANGLES, 0, self.numTrianglesInBatch)
 
 
 def groundGradient(p):
@@ -29,21 +46,21 @@ def groundGradient(p):
     y = p[1]
     if y < 0.0:
         return -1
-    elif y > 1.0:
+    elif y > RES_Y:
         return +1
     else:
-        return 2.0*y - 1.0
+        return 2.0*(y/RES_Y) - 1.0
 
 
-def isGround(noiseSource0, noiseSource1, p):
-    """"Returns True if the point is ground, False otherwise.
+def isGround(p):
+    """Returns True if the point is ground, False otherwise.
     """
-    freq0 = 1.0
-    freq1 = 1.0
+    freq0 = 0.01
+    freq1 = 0.01
     numOctaves0 = 4
     numOctaves1 = 4
-    turbScaleX = 1.3
-    turbScaleY = 1.0
+    turbScaleX = 0.045
+    turbScaleY = RES_Y
     n = noiseSource0.getValueWithMultipleOctaves(float(p[0])*freq0,
                                                  float(p[1])*freq0,
                                                  float(p[2])*freq0,
@@ -57,21 +74,26 @@ def isGround(noiseSource0, noiseSource1, p):
     return groundGradient(pPrime) <= 0
 
 
-def computeTerrainData():
-    noiseSource0 = pnoise.PerlinNoise()
-    noiseSource1 = pnoise.PerlinNoise()
-    voxelData = numpy.arange(RES_X*RES_Y*RES_Z).reshape(RES_X, RES_Y, RES_Z)
+def computeTerrainData(minP, maxP):
+    """
+    Returns voxelData which represents the voxel terrain values for the
+    points between minP and maxP. The chunk is translated so that
+    voxelData[0,0,0] corresponds to (minX, minY, minZ).
+    The size of the chunk is unscaled so that, for example, the width of the
+    chunk is equal to maxP-minP. Ditto for the other major axii.
+    """
+    minX, minY, minZ = minP
+    maxX, maxY, maxZ = maxP
 
-    # Sample a unit cube of the isGround function and save to voxelData.
-    # Sampling resolution is specified by RES_X, RES_Y, and RES_Z.
-    for x,y,z in itertools.product(range(0,RES_X),
-                                   range(0,RES_Y),
-                                   range(0,RES_Z)):
-        # p should range from 0 to +1 on each axis
-        p = (float(x) / RES_X,
-             float(y) / RES_Y,
-             float(z) / RES_Z)
-        voxelData[x, y, z] = isGround(noiseSource0, noiseSource1, p)
+    voxelData = numpy.arange((maxX-minX)*(maxY-minY)*(maxZ-minZ))
+    voxelData = voxelData.reshape(maxX-minX, maxY-minY, maxZ-minZ)
+
+    for x,y,z in itertools.product(range(minX, maxX),
+                                   range(minY, maxY),
+                                   range(minZ, maxZ)):
+        # p is in world-space, not chunk-space
+        p = (float(x), float(y), float(z))
+        voxelData[x - minX, y - minY, z - minZ] = isGround(p)
 
     return voxelData
 
@@ -104,15 +126,24 @@ def createWindow():
 window = createWindow()
 
 
-def generateGeometry(voxelData):
+def generateGeometry(voxelData, minP, maxP):
     """Generate one gigantic batch containing all polygon data.
     Many of the faces are hidden, so there is room for improvement here.
+    voxelData - Represents the voxel terrain values for the points between
+                minP and maxP. The chunk is translated so that
+                voxelData[0,0,0] corresponds to (minX, minY, minZ).
+                The size of the chunk is unscaled so that, for example, the
+                width of the chunk is equal to maxP-minP. Ditto for the
+                other major axii.
     """
+    minX, minY, minZ = minP
+    maxX, maxY, maxZ = maxP
+
     def getVoxelData(x, y, z):
-        if x>=0 and x<RES_X and \
-           y>=0 and y<RES_Y and \
-           z>=0 and z<RES_Z:
-            return voxelData[x,y,z]
+        if x>=minX and x<maxX and \
+           y>=minY and y<maxY and \
+           z>=minZ and z<maxZ:
+            return voxelData[x-minX, y-minY, z-minZ]
         else:
             return False
 
@@ -120,8 +151,10 @@ def generateGeometry(voxelData):
     norms = []
     L = 0.5 # Half-length of the cube along one side.
 
-    for x,y,z in itertools.product(range(0, RES_X), range(0, RES_Y), range(0, RES_Z)):
-        if not voxelData[x,y,z]:
+    for x,y,z in itertools.product(range(minX, maxX),
+                                   range(minY, maxY),
+                                   range(minZ, maxZ)):
+        if not getVoxelData(x,y,z):
             continue
 
         X = x - RES_X/2
@@ -182,16 +215,17 @@ def createVertexBufferObject(verts):
     return vbo_verts
 
 
-def bindVerts(vbo_verts):
-    glEnableClientState(GL_VERTEX_ARRAY)
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
-    glVertexPointer(3, GL_FLOAT, 0, 0)
+def generateChunk(minP, maxP):
+    voxelData = computeTerrainData(minP, maxP)
+    verts, norms = generateGeometry(voxelData, minP, maxP)
+    numTrianglesInBatch = len(verts)/3
 
+    vbo_verts = createVertexBufferObject(verts)
+    del verts
+    vbo_norms = createVertexBufferObject(norms)
+    del norms
 
-def bindNorms(vbo_norms):
-    glEnableClientState(GL_NORMAL_ARRAY)
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
-    glNormalPointer(GL_FLOAT, 0, 0)
+    return Chunk(vbo_verts, vbo_norms, numTrianglesInBatch)
 
 
 def setupGLState():
@@ -275,8 +309,13 @@ def main():
     global numTrianglesInBatch
     global shader
     global fps_display
+    global noiseSource0
+    global noiseSource1
 
-    random.seed(time.time())
+    #s = time.time()
+    #print "random seed:", s
+    #random.seed(s)
+    random.seed(1330302021.15)
     print "Seeded random number generator"
 
     setupGLState()
@@ -284,28 +323,20 @@ def main():
     fps_display = pyglet.clock.ClockDisplay()
     print "Setup initial OpenGL state."
 
-    a = time.time()
-    voxelData = computeTerrainData()
-    b = time.time()
-    print "Computed terrain (took %.1fs)" % (b-a)
-    del a, b
+    noiseSource0 = pnoise.PerlinNoise()
+    noiseSource1 = pnoise.PerlinNoise()
 
-    a = time.time()
-    verts, norms = generateGeometry(voxelData)
-    numTrianglesInBatch = len(verts)/3
-    b = time.time()
-    print "Generated Geometry (took %.1fs)" % (b-a)
-    del a, b
-
-    vbo_verts = createVertexBufferObject(verts)
-    del verts
-    vbo_norms = createVertexBufferObject(norms)
-    del norms
-    print "Created vertex buffer objects"
-
-    bindVerts(vbo_verts)
-    bindNorms(vbo_norms)
-    print "Uploaded geometry to the GPU"
+    assert RES_X % 8 == 0
+    assert RES_Z % 8 == 0
+    stepX = RES_X / 8
+    stepZ = RES_Z / 8
+    for x in xrange(0, RES_X, stepX):
+        for z in xrange(0, RES_Z, stepZ):
+            a = time.time()
+            chunk = generateChunk((x, 0, z), (x+stepX, RES_Y, z+stepZ))
+            b = time.time()
+            print "Generated chunk (%d,%d). It took %.1fs." % (x, z, b-a)
+            chunks.append(chunk)
 
     pyglet.app.run()
 
@@ -356,7 +387,13 @@ def on_draw():
     glPushMatrix()
     glRotatef(rot, 0, 1, 0)
     shader.bind()
-    glDrawArrays(GL_TRIANGLES, 0, numTrianglesInBatch)
+    glEnableClientState(GL_VERTEX_ARRAY)
+    glEnableClientState(GL_NORMAL_ARRAY)
+    for chunk in chunks:
+        chunk.bind()
+        chunk.draw()
+    glDisableClientState(GL_VERTEX_ARRAY)
+    glDisableClientState(GL_NORMAL_ARRAY)
     shader.unbind()
     glPopMatrix()
 
