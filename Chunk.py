@@ -3,6 +3,7 @@
 from pyglet.gl import *
 from ctypes import pointer, sizeof
 import itertools
+import pickle
 
 
 class Chunk:
@@ -118,3 +119,34 @@ class Chunk:
 
     def draw(self):
         glDrawArrays(GL_TRIANGLES, 0, self.numTrianglesInBatch)
+
+
+	def destroy(self):
+		"""Destroy the chunk and free all resources consumed by it, including
+		GPU memory for its vertex buffer objects.
+		"""
+		doomed_buffers = [self.vbo_verts, self.vbo_norms]
+		buffers = (GLuint * len(doomed_buffers))(*doomed_buffers)
+        glDeleteBuffers(len(buffers), buffers)
+
+		self.vbo_verts = GLuint(0) # 0 is an invalid handle
+		self.vbo_norms = GLuint(0) # 0 is an invalid handle
+		self.voxelData = None
+
+
+	def saveToDisk(self, fn):
+		onDiskFormat = ["magic", self.voxelData, self.minP, self.maxP]
+		pickle.dump(onDiskFormat, open(fn, "wb"))
+
+
+	@classmethod
+	def loadFromDisk(cls, fn):
+		onDiskFormat = pickle.load(open(fn, "rb"))
+		if not len(onDiskFormat) == 4:
+			raise Exception("On disk chunk format is totally unrecognized.")
+		if not onDiskFormat[0] == "magic":
+			raise Exception("Chunk uses unsupported format version \"%r\"." % onDiskFormat[0])
+		voxelData = onDiskFormat[1]
+		minP = onDiskFormat[2]
+		maxP = onDiskFormat[3]
+		return Chunk(voxelData, minP, maxP)
