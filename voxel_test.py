@@ -10,6 +10,8 @@ import time
 import random
 import pnoise
 import numpy
+import multiprocessing
+import Queue
 
 
 RES_X = 160
@@ -20,7 +22,7 @@ rot = 0.0
 numTrianglesInBatch = None
 shader = None
 fps_display = None
-chunks = []
+chunks = None
 
 
 class Chunk:
@@ -82,6 +84,7 @@ def computeTerrainData(minP, maxP):
     The size of the chunk is unscaled so that, for example, the width of the
     chunk is equal to maxP-minP. Ditto for the other major axii.
     """
+    print "Generating terrain for chunk; minP=%r, maxP=%r" % (minP, maxP)
     minX, minY, minZ = minP
     maxX, maxY, maxZ = maxP
 
@@ -215,19 +218,6 @@ def createVertexBufferObject(verts):
     return vbo_verts
 
 
-def generateChunk(minP, maxP):
-    voxelData = computeTerrainData(minP, maxP)
-    verts, norms = generateGeometry(voxelData, minP, maxP)
-    numTrianglesInBatch = len(verts)/3
-
-    vbo_verts = createVertexBufferObject(verts)
-    del verts
-    vbo_norms = createVertexBufferObject(norms)
-    del norms
-
-    return Chunk(vbo_verts, vbo_norms, numTrianglesInBatch)
-
-
 def setupGLState():
     glClearColor(0.2, 0.4, 0.5, 1.0)
 
@@ -304,6 +294,11 @@ def createShaderObject():
     '''])
 
 
+def terrainWorker(extent):
+    voxelData = computeTerrainData(extent[0], extent[1])
+    return [voxelData, extent[0], extent[1]]
+
+
 def main():
     global window
     global numTrianglesInBatch
@@ -311,6 +306,7 @@ def main():
     global fps_display
     global noiseSource0
     global noiseSource1
+    global chunks
 
     #s = time.time()
     #print "random seed:", s
@@ -326,17 +322,35 @@ def main():
     noiseSource0 = pnoise.PerlinNoise()
     noiseSource1 = pnoise.PerlinNoise()
 
+    # Define the regions to use for the world's chunks.
+    a = time.time()
     assert RES_X % 8 == 0
     assert RES_Z % 8 == 0
     stepX = RES_X / 8
     stepZ = RES_Z / 8
+    extents = []
     for x in xrange(0, RES_X, stepX):
         for z in xrange(0, RES_Z, stepZ):
-            a = time.time()
-            chunk = generateChunk((x, 0, z), (x+stepX, RES_Y, z+stepZ))
-            b = time.time()
-            print "Generated chunk (%d,%d). It took %.1fs." % (x, z, b-a)
-            chunks.append(chunk)
+            extents.append([(x, 0, z), (x+stepX, RES_Y, z+stepZ)])
+
+    # Spread chunk generation work among a pool of worker processes.
+    pool = multiprocessing.Pool(processes=8)
+    print "Starting terrain generation worker processes."
+    terrainData = pool.map(terrainWorker, extents)
+    b = time.time()
+    print "Generated terrain. It took %.1fs." % (b-a)
+
+    # Collect results and generate geometry.
+    chunks = []
+    for voxelData, minP, maxP in terrainData:
+        verts, norms = generateGeometry(voxelData, minP, maxP)
+        numTrianglesInBatch = len(verts)/3
+        vbo_verts = createVertexBufferObject(verts)
+        del verts
+        vbo_norms = createVertexBufferObject(norms)
+        del norms
+        chunks.append(Chunk(vbo_verts, vbo_norms, numTrianglesInBatch))
+    print "Generated geometry for terrain."
 
     pyglet.app.run()
 
