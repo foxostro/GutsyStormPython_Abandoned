@@ -4,5 +4,14 @@ is so far intended to use a voxel-based, procedurally generated terrain
 similar to Minecraft. This, however, is not exactly a Minecraft clone.
 Instead, the plan is to use Minecraft-like terrain and terrain editing
 functionality as the basis for the game world and the world editor. The
-game itself will be a simple hack-n-slash RPG which itself could be
+game itself will be a simple hack-n-slash RPG which itself would be
 considered to be somewhat of a Diablo clone.
+
+Dependencies:
+  * Numpy
+  * PIL
+  * Pyglet
+
+To Run: You must build a few frameworks before you can use some of the
+prototype scripts. For example, Perlin Noise generation requires the
+framework pnoise.framework to be built and installed to "./Frameworks/".

@@ -112,8 +112,9 @@ class TerrainGenerator:
         "Generates and returns terrain data."
         a = time.time()
         extents = self.breakWorldIntoChunkExtents()
-        pool = multiprocessing.Pool(processes=8)
-        terrainData = pool.map(terrainWorker, extents)
+        #pool = multiprocessing.Pool(processes=8)
+        #terrainData = pool.map(terrainWorker, extents)
+        terrainData = map(terrainWorker, extents)
         b = time.time()
         print "Generated terrain. It took %.1fs." % (b-a)
         return terrainData

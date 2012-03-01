@@ -1,0 +1,453 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4A011A5A1500090700B4D482 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A011A591500090700B4D482 /* Cocoa.framework */; };
+		4A011A641500090700B4D482 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 4A011A621500090700B4D482 /* InfoPlist.strings */; };
+		4A011A6D1500090700B4D482 /* SenTestingKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A011A6C1500090700B4D482 /* SenTestingKit.framework */; };
+		4A011A6E1500090700B4D482 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A011A591500090700B4D482 /* Cocoa.framework */; };
+		4A011A711500090700B4D482 /* pnoise.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A011A561500090700B4D482 /* pnoise.framework */; };
+		4A011A771500090700B4D482 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 4A011A751500090700B4D482 /* InfoPlist.strings */; };
+		4A011A791500090700B4D482 /* pnoiseTests.h in Resources */ = {isa = PBXBuildFile; fileRef = 4A011A781500090700B4D482 /* pnoiseTests.h */; };
+		4A011A7B1500090700B4D482 /* pnoiseTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 4A011A7A1500090700B4D482 /* pnoiseTests.m */; };
+		4A011A89150009A800B4D482 /* CZGPerlinGenerator.h in Headers */ = {isa = PBXBuildFile; fileRef = 4A011A87150009A800B4D482 /* CZGPerlinGenerator.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		4A011A8A150009A800B4D482 /* CZGPerlinGenerator.m in Sources */ = {isa = PBXBuildFile; fileRef = 4A011A88150009A800B4D482 /* CZGPerlinGenerator.m */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4A011A6F1500090700B4D482 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4A011A4C1500090700B4D482 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4A011A551500090700B4D482;
+			remoteInfo = pnoise;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		4A011A561500090700B4D482 /* pnoise.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = pnoise.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		4A011A591500090700B4D482 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
+		4A011A5C1500090700B4D482 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
+		4A011A5D1500090700B4D482 /* CoreData.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreData.framework; path = System/Library/Frameworks/CoreData.framework; sourceTree = SDKROOT; };
+		4A011A5E1500090700B4D482 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		4A011A611500090700B4D482 /* pnoise-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "pnoise-Info.plist"; sourceTree = "<group>"; };
+		4A011A631500090700B4D482 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		4A011A651500090700B4D482 /* pnoise-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "pnoise-Prefix.pch"; sourceTree = "<group>"; };
+		4A011A6B1500090700B4D482 /* pnoiseTests.octest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = pnoiseTests.octest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4A011A6C1500090700B4D482 /* SenTestingKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SenTestingKit.framework; path = Library/Frameworks/SenTestingKit.framework; sourceTree = DEVELOPER_DIR; };
+		4A011A741500090700B4D482 /* pnoiseTests-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "pnoiseTests-Info.plist"; sourceTree = "<group>"; };
+		4A011A761500090700B4D482 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		4A011A781500090700B4D482 /* pnoiseTests.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pnoiseTests.h; sourceTree = "<group>"; };
+		4A011A7A1500090700B4D482 /* pnoiseTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = pnoiseTests.m; sourceTree = "<group>"; };
+		4A011A87150009A800B4D482 /* CZGPerlinGenerator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CZGPerlinGenerator.h; sourceTree = "<group>"; };
+		4A011A88150009A800B4D482 /* CZGPerlinGenerator.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CZGPerlinGenerator.m; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4A011A521500090700B4D482 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A011A5A1500090700B4D482 /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4A011A671500090700B4D482 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A011A6D1500090700B4D482 /* SenTestingKit.framework in Frameworks */,
+				4A011A6E1500090700B4D482 /* Cocoa.framework in Frameworks */,
+				4A011A711500090700B4D482 /* pnoise.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4A011A4A1500090700B4D482 = {
+			isa = PBXGroup;
+			children = (
+				4A011A5F1500090700B4D482 /* pnoise */,
+				4A011A721500090700B4D482 /* pnoiseTests */,
+				4A011A581500090700B4D482 /* Frameworks */,
+				4A011A571500090700B4D482 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4A011A571500090700B4D482 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4A011A561500090700B4D482 /* pnoise.framework */,
+				4A011A6B1500090700B4D482 /* pnoiseTests.octest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4A011A581500090700B4D482 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				4A011A591500090700B4D482 /* Cocoa.framework */,
+				4A011A6C1500090700B4D482 /* SenTestingKit.framework */,
+				4A011A5B1500090700B4D482 /* Other Frameworks */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		4A011A5B1500090700B4D482 /* Other Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				4A011A5C1500090700B4D482 /* AppKit.framework */,
+				4A011A5D1500090700B4D482 /* CoreData.framework */,
+				4A011A5E1500090700B4D482 /* Foundation.framework */,
+			);
+			name = "Other Frameworks";
+			sourceTree = "<group>";
+		};
+		4A011A5F1500090700B4D482 /* pnoise */ = {
+			isa = PBXGroup;
+			children = (
+				4A011A87150009A800B4D482 /* CZGPerlinGenerator.h */,
+				4A011A88150009A800B4D482 /* CZGPerlinGenerator.m */,
+				4A011A601500090700B4D482 /* Supporting Files */,
+			);
+			path = pnoise;
+			sourceTree = "<group>";
+		};
+		4A011A601500090700B4D482 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				4A011A611500090700B4D482 /* pnoise-Info.plist */,
+				4A011A621500090700B4D482 /* InfoPlist.strings */,
+				4A011A651500090700B4D482 /* pnoise-Prefix.pch */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		4A011A721500090700B4D482 /* pnoiseTests */ = {
+			isa = PBXGroup;
+			children = (
+				4A011A781500090700B4D482 /* pnoiseTests.h */,
+				4A011A7A1500090700B4D482 /* pnoiseTests.m */,
+				4A011A731500090700B4D482 /* Supporting Files */,
+			);
+			path = pnoiseTests;
+			sourceTree = "<group>";
+		};
+		4A011A731500090700B4D482 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				4A011A741500090700B4D482 /* pnoiseTests-Info.plist */,
+				4A011A751500090700B4D482 /* InfoPlist.strings */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		4A011A531500090700B4D482 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A011A89150009A800B4D482 /* CZGPerlinGenerator.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		4A011A551500090700B4D482 /* pnoise */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4A011A7E1500090700B4D482 /* Build configuration list for PBXNativeTarget "pnoise" */;
+			buildPhases = (
+				4A011A511500090700B4D482 /* Sources */,
+				4A011A521500090700B4D482 /* Frameworks */,
+				4A011A531500090700B4D482 /* Headers */,
+				4A011A541500090700B4D482 /* Resources */,
+				4AB5C1F51500236700458AF3 /* Run Script */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = pnoise;
+			productName = pnoise;
+			productReference = 4A011A561500090700B4D482 /* pnoise.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		4A011A6A1500090700B4D482 /* pnoiseTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4A011A811500090700B4D482 /* Build configuration list for PBXNativeTarget "pnoiseTests" */;
+			buildPhases = (
+				4A011A661500090700B4D482 /* Sources */,
+				4A011A671500090700B4D482 /* Frameworks */,
+				4A011A681500090700B4D482 /* Resources */,
+				4A011A691500090700B4D482 /* ShellScript */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4A011A701500090700B4D482 /* PBXTargetDependency */,
+			);
+			name = pnoiseTests;
+			productName = pnoiseTests;
+			productReference = 4A011A6B1500090700B4D482 /* pnoiseTests.octest */;
+			productType = "com.apple.product-type.bundle";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4A011A4C1500090700B4D482 /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = 4A011A4F1500090700B4D482 /* Build configuration list for PBXProject "pnoise" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = 4A011A4A1500090700B4D482;
+			productRefGroup = 4A011A571500090700B4D482 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4A011A551500090700B4D482 /* pnoise */,
+				4A011A6A1500090700B4D482 /* pnoiseTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4A011A541500090700B4D482 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A011A641500090700B4D482 /* InfoPlist.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4A011A681500090700B4D482 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A011A771500090700B4D482 /* InfoPlist.strings in Resources */,
+				4A011A791500090700B4D482 /* pnoiseTests.h in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		4A011A691500090700B4D482 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Run the unit tests in this test bundle.\n\"${SYSTEM_DEVELOPER_DIR}/Tools/RunUnitTests\"\n";
+		};
+		4AB5C1F51500236700458AF3 /* Run Script */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Run Script";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "mkdir -p \"$BUILT_PRODUCTS_DIR/pnoise.framework/Resources/BridgeSupport/\"\ngen_bridge_metadata -f \"$BUILT_PRODUCTS_DIR/pnoise.framework\" -o \"$BUILT_PRODUCTS_DIR/pnoise.framework/Resources/BridgeSupport/pnoise.bridgesupport\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4A011A511500090700B4D482 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A011A8A150009A800B4D482 /* CZGPerlinGenerator.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4A011A661500090700B4D482 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A011A7B1500090700B4D482 /* pnoiseTests.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4A011A701500090700B4D482 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4A011A551500090700B4D482 /* pnoise */;
+			targetProxy = 4A011A6F1500090700B4D482 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		4A011A621500090700B4D482 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				4A011A631500090700B4D482 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		4A011A751500090700B4D482 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				4A011A761500090700B4D482 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		4A011A7C1500090700B4D482 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
+				COPY_PHASE_STRIP = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_MISSING_PROTOTYPES = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		4A011A7D1500090700B4D482 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_MISSING_PROTOTYPES = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		4A011A7F1500090700B4D482 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				FRAMEWORK_VERSION = A;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "pnoise/pnoise-Prefix.pch";
+				INFOPLIST_FILE = "pnoise/pnoise-Info.plist";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				WRAPPER_EXTENSION = framework;
+			};
+			name = Debug;
+		};
+		4A011A801500090700B4D482 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				FRAMEWORK_VERSION = A;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "pnoise/pnoise-Prefix.pch";
+				INFOPLIST_FILE = "pnoise/pnoise-Info.plist";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				WRAPPER_EXTENSION = framework;
+			};
+			name = Release;
+		};
+		4A011A821500090700B4D482 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = "$(DEVELOPER_LIBRARY_DIR)/Frameworks";
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "pnoise/pnoise-Prefix.pch";
+				INFOPLIST_FILE = "pnoiseTests/pnoiseTests-Info.plist";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				WRAPPER_EXTENSION = octest;
+			};
+			name = Debug;
+		};
+		4A011A831500090700B4D482 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = "$(DEVELOPER_LIBRARY_DIR)/Frameworks";
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "pnoise/pnoise-Prefix.pch";
+				INFOPLIST_FILE = "pnoiseTests/pnoiseTests-Info.plist";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				WRAPPER_EXTENSION = octest;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4A011A4F1500090700B4D482 /* Build configuration list for PBXProject "pnoise" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A011A7C1500090700B4D482 /* Debug */,
+				4A011A7D1500090700B4D482 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4A011A7E1500090700B4D482 /* Build configuration list for PBXNativeTarget "pnoise" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A011A7F1500090700B4D482 /* Debug */,
+				4A011A801500090700B4D482 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4A011A811500090700B4D482 /* Build configuration list for PBXNativeTarget "pnoiseTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A011A821500090700B4D482 /* Debug */,
+				4A011A831500090700B4D482 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4A011A4C1500090700B4D482 /* Project object */;
+}

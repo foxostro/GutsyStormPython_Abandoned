@@ -1,0 +1,7 @@
+//
+// Prefix header for all source files of the 'pnoise' target in the 'pnoise' project
+//
+
+#ifdef __OBJC__
+    #import <Cocoa/Cocoa.h>
+#endif
