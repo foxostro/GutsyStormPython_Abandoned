@@ -4,10 +4,8 @@
 """
 
 import numpy
-import multiprocessing
 import itertools
 import time
-import random
 from pnoise import PerlinNoise
 
 
@@ -43,22 +41,16 @@ class TerrainGenerator:
 
     def isGround(self, p):
         "Returns True if the point is ground, False otherwise."
-        freq0 = 0.01
-        freq1 = 0.01
-        numOctaves0 = 4
-        numOctaves1 = 4
-        turbScaleX = 0.045
-        turbScaleY = self.terrainHeight
-        n = self.noiseSource0.getValueWithMultipleOctaves(float(p[0])*freq0,
-                                                          float(p[1])*freq0,
-                                                          float(p[2])*freq0,
-                                                          numOctaves0)
+        turbScaleX = 1.5
+        turbScaleY = self.terrainHeight / 2.0
+        n = self.noiseSource0.getValue(float(p[0]),
+                                       float(p[1]),
+                                       float(p[2]))
         yFreq = turbScaleX * ((n+1) / 2.0)
         t = turbScaleY * \
-            self.noiseSource1.getValueWithMultipleOctaves(float(p[0])*freq1,
-                                                          float(p[1])*yFreq,
-                                                          float(p[2])*freq1,
-                                                          numOctaves1)
+            self.noiseSource1.getValue(float(p[0]),
+                                       float(p[1])*yFreq,
+                                       float(p[2]))
         pPrime = (p[0], p[1] + t, p[1])
         return self.groundGradient(pPrime) <= 0
 
@@ -112,8 +104,6 @@ class TerrainGenerator:
         "Generates and returns terrain data."
         a = time.time()
         extents = self.breakWorldIntoChunkExtents()
-        #pool = multiprocessing.Pool(processes=8)
-        #terrainData = pool.map(terrainWorker, extents)
         terrainData = map(terrainWorker, extents)
         b = time.time()
         print "Generated terrain. It took %.1fs." % (b-a)
@@ -123,11 +113,8 @@ class TerrainGenerator:
     def __init__(self, terrainWidth, terrainHeight, terrainDepth, randomseed):
         print "Using random seed: %r" % randomseed
 
-        oldRandomState = random.getstate()
-        random.seed(randomseed)
-        self.noiseSource0 = PerlinNoise()
-        self.noiseSource1 = PerlinNoise()
-        random.setstate(oldRandomState)
+        self.noiseSource0 = PerlinNoise(randomseed=randomseed)
+        self.noiseSource1 = PerlinNoise(randomseed=randomseed)
 
         self.terrainWidth = terrainWidth
         self.terrainHeight = terrainHeight

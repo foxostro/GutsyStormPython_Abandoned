@@ -16,12 +16,9 @@ from Chunk import Chunk
 from TerrainGenerator import TerrainGenerator
 
 
-#RES_X = 160
-#RES_Y = 48
-#RES_Z = 160
-RES_X = 64
-RES_Y = 32
-RES_Z = 64
+RES_X = 128
+RES_Y = 64
+RES_Z = 128
 
 useWireframe = False
 rot = 0.0
@@ -145,7 +142,7 @@ def main():
     fps_display = pyglet.clock.ClockDisplay()
     print "Setup initial OpenGL state."
 
-    terrainGenerator = TerrainGenerator(RES_X, RES_Y, RES_Z, 1330332183.734619)
+    terrainGenerator = TerrainGenerator(RES_X, RES_Y, RES_Z, time.time())
     terrainData = terrainGenerator.generate()
     chunks = map(lambda d: Chunk(d[0], d[1], d[2]), terrainData)
     print "Generated chunks."

@@ -23,6 +23,7 @@
 
 + (CZGPerlinGenerator *) perlinGenerator;
 
+- (void)  regeneratePermutationTableWithSeed: (unsigned)seed;
 - (float) perlinNoiseX: (float) x y: (float) y z: (float) z t: (float) t;
 
 

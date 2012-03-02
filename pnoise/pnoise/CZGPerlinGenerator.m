@@ -50,12 +50,19 @@ static const char gradient[32][4] =
    if ((self = [super init])) {
       for (unsigned int i = 0; i < PERMUTATION_SIZE; i++) {
          permut[i] = rand() & 0xff;
-         octaves = 1;
-         persistence = 1.0;
-         zoom = 1.0;
       }
+      octaves = 1;
+      persistence = 1.0;
+      zoom = 1.0;
    }
    return self;
+}
+
+- (void)  regeneratePermutationTableWithSeed: (unsigned)seed {
+    srand(seed);
+    for (unsigned int i = 0; i < PERMUTATION_SIZE; i++) {
+        permut[i] = rand() & 0xff;
+    }
 }
 
 - (int) gradientAtX: (const int) i y: (const int)j z: (const int)k t: (const int)l {
@@ -95,16 +102,16 @@ static const char gradient[32][4] =
 }
 
 - (float) perlinNoiseX: (const float) x y: (const float) y z: (const float) z t: (const float) t {
-   float noise = 0.0;
-   for (NSUInteger octave = 0; octave<self.octaves; octave++) {
-      float frequency = pow(2,octave);
-      float amplitude = pow(self.persistence, octave);
-      noise += [self smoothNoiseX: x * frequency/zoom 
-                                y: y * frequency/zoom 
-                                z: z * frequency/zoom 
-                                t: t * frequency/zoom] * amplitude;
-   }
-   return noise; 
+    float noise = 0.0;
+    for (NSUInteger octave = 0; octave<self.octaves; octave++) {
+        float frequency = pow(2,octave);
+        float amplitude = pow(self.persistence, octave);
+        noise += [self smoothNoiseX: x * frequency/zoom 
+                                  y: y * frequency/zoom 
+                                  z: z * frequency/zoom 
+                                  t: t * frequency/zoom] * amplitude;
+    }
+    return noise; 
 }
 
 
