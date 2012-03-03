@@ -1,121 +1,191 @@
 #!/usr/bin/env python
 # vim:ts=4:sw=4:et:filetype=python
-"""Terrain generator module.
+"""Terrain generation
 """
 
 import numpy
 import itertools
 import time
+import multiprocessing
 from pnoise import PerlinNoise
 
 
-def terrainWorker(args):
+def groundGradient(terrainHeight, p):
+    """Return a value between -1 and +1 so that a line through the y-axis
+    maps to a smooth gradient of values from -1 to +1.
+    """
+    y = p[1]
+    if y < 0.0:
+        return -1
+    elif y > terrainHeight:
+        return +1
+    else:
+        return 2.0*(y/terrainHeight) - 1.0
+
+
+def isGround(terrainHeight, noiseSource0, noiseSource1, p):
+    "Returns True if the point is ground, False otherwise."
+    turbScaleX = 1.5
+    turbScaleY = terrainHeight / 2.0
+    n = noiseSource0.getValue(float(p[0]),
+                              float(p[1]),
+                              float(p[2]))
+    yFreq = turbScaleX * ((n+1) / 2.0)
+    t = turbScaleY * \
+        noiseSource1.getValue(float(p[0]),
+                              float(p[1])*yFreq,
+                              float(p[2]))
+    pPrime = (p[0], p[1] + t, p[1])
+    return groundGradient(terrainHeight, pPrime) <= 0
+
+
+def computeTerrainData(noiseSourceSeed0, noiseSourceSeed1, \
+                       terrainHeight, \
+                       minP, maxP):
+    """
+    Returns voxelData which represents the voxel terrain values for the
+    points between minP and maxP. The chunk is translated so that
+    voxelData[0,0,0] corresponds to (minX, minY, minZ).
+    The size of the chunk is unscaled so that, for example, the width of
+    the chunk is equal to maxP-minP. Ditto for the other major axii.
+    """
+    print "Generating terrain for chunk: minP=%r ; maxP=%r" % (minP, maxP)
+    minX, minY, minZ = minP
+    maxX, maxY, maxZ = maxP
+
+    # Must create PerlinNoise here as Objective-C objects cannot be pickled and
+    # send to other processes with IPC for use in multiprocessing.
+    noiseSource0 = PerlinNoise(randomseed=noiseSourceSeed0)
+    noiseSource1 = PerlinNoise(randomseed=noiseSourceSeed1)
+
+    voxelData = numpy.arange((maxX-minX)*(maxY-minY)*(maxZ-minZ))
+    voxelData = voxelData.reshape(maxX-minX, maxY-minY, maxZ-minZ)
+
+    for x,y,z in itertools.product(range(minX, maxX),
+                                   range(minY, maxY),
+                                   range(minZ, maxZ)):
+        # p is in world-space, not chunk-space
+        p = (float(x), float(y), float(z))
+        g = isGround(terrainHeight, noiseSource0, noiseSource1, p)
+        voxelData[x - minX, y - minY, z - minZ] = g
+
+    return voxelData
+
+
+def generateGeometry(voxelData, minP, maxP):
+    """Generate one gigantic batch containing all polygon data.
+    Many of the faces are hidden, so there is room for improvement here.
+    voxelData - Represents the voxel terrain values for the points between
+                minP and maxP. The chunk is translated so that
+                voxelData[0,0,0] corresponds to (minX, minY, minZ).
+                The size of the chunk is unscaled so that, for example, the
+                width of the chunk is equal to maxP-minP. Ditto for the
+                other major axii.
+    """
+    L = 0.5 # Half-length of each block along each of its sides.
+    minX, minY, minZ = minP
+    maxX, maxY, maxZ = maxP
+
+    verts = []
+    norms = []
+
+    for x,y,z in itertools.product(range(minX, maxX),
+                                   range(minY, maxY),
+                                   range(minZ, maxZ)):
+        if not voxelData[x-minX, y-minY, z-minZ]:
+            continue
+
+        # Top Face
+        if not (y+1<maxY and voxelData[x-minX, y-minY+1, z-minZ]):
+            verts.extend([x-L, y+L, z+L,  x+L, y+L, z-L,  x-L, y+L, z-L,
+                          x-L, y+L, z+L,  x+L, y+L, z+L,  x+L, y+L, z-L])
+            norms.extend([  0,  +1,   0,    0,  +1,   0,    0,  +1,   0,
+                            0,  +1,   0,    0,  +1,   0,    0,  +1,   0])
+
+        # Bottom Face
+        if not (y-1>=minY and voxelData[x-minX, y-minY-1, z-minZ]):
+            verts.extend([x-L, y-L, z-L,  x+L, y-L, z-L,  x-L, y-L, z+L,
+                          x+L, y-L, z-L,  x+L, y-L, z+L,  x-L, y-L, z+L])
+            norms.extend([  0,  -1,   0,      0, -1,  0,    0,  -1,   0,
+                            0,  -1,   0,      0, -1,  0,    0,  -1,   0])
+
+        # Front Face
+        if not (z+1<maxZ and voxelData[x-minX, y-minY, z-minZ+1]):
+            verts.extend([x-L, y-L, z+L,  x+L, y+L, z+L,  x-L, y+L, z+L,
+                          x-L, y-L, z+L,  x+L, y-L, z+L,  x+L, y+L, z+L])
+            norms.extend([  0,   0,  +1,    0,   0,  +1,    0,   0,  +1,
+                            0,   0,  +1,    0,   0,  +1,    0,   0,  +1])
+
+        # Back Face
+        if not (z-1>=minZ and voxelData[x-minX, y-minY, z-minZ-1]):
+            verts.extend([x-L, y+L, z-L,  x+L, y+L, z-L,  x-L, y-L, z-L,
+                          x+L, y+L, z-L,  x+L, y-L, z-L,  x-L, y-L, z-L])
+            norms.extend([  0,   0,  -1,    0,   0,  -1,    0,   0,  -1,
+                            0,   0,  -1,    0,   0,  -1,    0,   0,  -1])
+
+        # Right Face
+        if not (x+1<maxX and voxelData[x-minX+1, y-minY, z-minZ]):
+            verts.extend([x+L, y+L, z-L,  x+L, y+L, z+L,  x+L, y-L, z+L,
+                          x+L, y-L, z-L,  x+L, y+L, z-L,  x+L, y-L, z+L])
+            norms.extend([ +1,   0,   0,   +1,   0,   0,   +1,   0,   0,
+                           +1,   0,   0,   +1,   0,   0,   +1,   0,   0])
+
+        # Left Face
+        if not (x-1>=minX and voxelData[x-minX-1, y-minY, z-minZ]):
+            verts.extend([x-L, y-L, z+L,  x-L, y+L, z+L,  x-L, y+L, z-L,
+                          x-L, y-L, z+L,  x-L, y+L, z-L,  x-L, y-L, z-L])
+            norms.extend([ -1,   0,   0,   -1,   0,   0,   -1,   0,   0,
+                           -1,   0,   0,   -1,   0,   0,   -1,   0,   0])
+
+    return verts, norms
+
+
+def workerProcess(args):
     """Run by worker processes for the terrain generator to compute terrain for
     a single chunk.
-    gen - TerrainGenerator object
-    extent - A list containing two triples which describe the min and max
-             corners of the terrain bounding cube, in world-space.
     """
-    assert len(args)==2
-    gen = args[0]
-    extent = args[1]
-    voxelData = gen.computeTerrainData(extent[0], extent[1])
-    return [voxelData, extent[0], extent[1]]
+    # Unpack arguments
+    assert len(args)==5
+    noiseSourceSeed0 = args[0]
+    noiseSourceSeed1 = args[1]
+    terrainHeight = args[2]
+    minP = args[3]
+    maxP = args[4]
+
+    # Generate terrain and geometry.
+    voxelData = computeTerrainData(noiseSourceSeed0, noiseSourceSeed1,
+                                   terrainHeight,
+                                   minP, maxP)
+    verts, norms = generateGeometry(voxelData, minP, maxP)
+
+    # Return value will be used as parameters to Chunk.__init__
+    return [voxelData, verts, norms, minP, maxP]
 
 
-class TerrainGenerator:
-    "Generates procedural voxel terrain from given parameters."
-
-    def groundGradient(self, p):
-        """Return a value between -1 and +1 so that a line through the y-axis
-        maps to a smooth gradient of values from -1 to +1.
-        """
-        y = p[1]
-        if y < 0.0:
-            return -1
-        elif y > self.terrainHeight:
-            return +1
-        else:
-            return 2.0*(y/self.terrainHeight) - 1.0
-
-
-    def isGround(self, p):
-        "Returns True if the point is ground, False otherwise."
-        turbScaleX = 1.5
-        turbScaleY = self.terrainHeight / 2.0
-        n = self.noiseSource0.getValue(float(p[0]),
-                                       float(p[1]),
-                                       float(p[2]))
-        yFreq = turbScaleX * ((n+1) / 2.0)
-        t = turbScaleY * \
-            self.noiseSource1.getValue(float(p[0]),
-                                       float(p[1])*yFreq,
-                                       float(p[2]))
-        pPrime = (p[0], p[1] + t, p[1])
-        return self.groundGradient(pPrime) <= 0
+def generateWorkBatches(stepX, stepZ, \
+                        terrainWidth, terrainHeight, terrainDepth, \
+                        noiseSourceSeed0, noiseSourceSeed1):
+    assert terrainWidth % stepX == 0
+    assert terrainDepth % stepZ == 0
+    args = []
+    for x in xrange(0, terrainWidth, stepX):
+        for z in xrange(0, terrainDepth, stepZ):
+            # The point here is to pack together arguments
+            # to the terrainWorker processes.
+            args.append([noiseSourceSeed0, noiseSourceSeed1,
+                         terrainHeight,
+                         (x, 0, z), (x+stepX, terrainHeight, z+stepZ)
+                        ])
+    return args
 
 
-    def computeTerrainData(self, minP, maxP):
-        """
-        Returns voxelData which represents the voxel terrain values for the
-        points between minP and maxP. The chunk is translated so that
-        voxelData[0,0,0] corresponds to (minX, minY, minZ).
-        The size of the chunk is unscaled so that, for example, the width of
-        the chunk is equal to maxP-minP. Ditto for the other major axii.
-        """
-        print "Generating terrain for chunk; minP=%r, maxP=%r" % (minP, maxP)
-        minX, minY, minZ = minP
-        maxX, maxY, maxZ = maxP
-
-        voxelData = numpy.arange((maxX-minX)*(maxY-minY)*(maxZ-minZ))
-        voxelData = voxelData.reshape(maxX-minX, maxY-minY, maxZ-minZ)
-
-        for x,y,z in itertools.product(range(minX, maxX),
-                                       range(minY, maxY),
-                                       range(minZ, maxZ)):
-            # p is in world-space, not chunk-space
-            p = (float(x), float(y), float(z))
-            voxelData[x - minX, y - minY, z - minZ] = self.isGround(p)
-
-        return voxelData
-
-
-    def breakWorldIntoChunkExtents(self):
-        # Define the regions to use for the world's chunks.
-        numChunksAlongX = 8
-        numChunksAlongZ = 8
-        assert self.terrainWidth % numChunksAlongX == 0
-        assert self.terrainDepth % numChunksAlongZ == 0
-        stepX = self.terrainWidth / numChunksAlongX
-        stepZ = self.terrainDepth / numChunksAlongZ
-        extents = []
-        for x in xrange(0, self.terrainWidth, stepX):
-            for z in xrange(0, self.terrainDepth, stepZ):
-                # The point here is to pack together arguments
-                # to the terrainWorker processes.
-                extents.append([self,
-                                [(x, 0, z),
-                                 (x+stepX, self.terrainHeight, z+stepZ)]
-                               ])
-        return extents
-
-
-    def generate(self):
-        "Generates and returns terrain data."
-        a = time.time()
-        extents = self.breakWorldIntoChunkExtents()
-        terrainData = map(terrainWorker, extents)
-        b = time.time()
-        print "Generated terrain. It took %.1fs." % (b-a)
-        return terrainData
-
-
-    def __init__(self, terrainWidth, terrainHeight, terrainDepth, randomseed):
-        print "Using random seed: %r" % randomseed
-
-        self.noiseSource0 = PerlinNoise(randomseed=randomseed)
-        self.noiseSource1 = PerlinNoise(randomseed=randomseed)
-
-        self.terrainWidth = terrainWidth
-        self.terrainHeight = terrainHeight
-        self.terrainDepth = terrainDepth
+def generate(w, h, d, randomseed):
+    "Generates and returns terrain data."
+    noiseSourceSeed0 = randomseed
+    noiseSourceSeed1 = randomseed + 1
+    pool = multiprocessing.Pool()
+    args = generateWorkBatches(16, 16,
+                               w, h, d,
+                               noiseSourceSeed0, noiseSourceSeed1)
+    terrainData = pool.map(workerProcess, args)
+    return terrainData

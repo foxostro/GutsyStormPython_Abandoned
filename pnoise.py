@@ -17,7 +17,7 @@ class PerlinNoise:
         self.generator.setPersistence_(kwargs.get('persistence', 0.5))
         self.generator.setZoom_(kwargs.get('zoom', 100))
 
-        randomseed = kwargs.get('randomseed', time.time())
+        randomseed = kwargs.get('randomseed', 0)
         self.generator.regeneratePermutationTableWithSeed_(randomseed)
 
 

@@ -375,6 +375,7 @@
 				GCC_PREFIX_HEADER = "pnoise/pnoise-Prefix.pch";
 				INFOPLIST_FILE = "pnoise/pnoise-Info.plist";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx10.6;
 				WRAPPER_EXTENSION = framework;
 			};
 			name = Debug;
@@ -389,6 +390,7 @@
 				GCC_PREFIX_HEADER = "pnoise/pnoise-Prefix.pch";
 				INFOPLIST_FILE = "pnoise/pnoise-Info.plist";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx10.6;
 				WRAPPER_EXTENSION = framework;
 			};
 			name = Release;

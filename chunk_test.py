@@ -13,7 +13,7 @@ import tempfile
 
 from Shader import Shader
 from Chunk import Chunk
-from TerrainGenerator import TerrainGenerator
+import TerrainGenerator
 
 
 RES_X = 128
@@ -38,7 +38,7 @@ def createWindow():
     try:
         config = Config(sample_buffers=1,
                         samples=4,
-                        depth_size=16,
+                        depth_size=32,
                         double_buffer=True)
         window = pyglet.window.Window(width=640,
                                       height=480,
@@ -142,24 +142,38 @@ def main():
     fps_display = pyglet.clock.ClockDisplay()
     print "Setup initial OpenGL state."
 
-    terrainGenerator = TerrainGenerator(RES_X, RES_Y, RES_Z, time.time())
-    terrainData = terrainGenerator.generate()
-
+    # Generate terrain data and geometry.
     a = time.time()
-    chunks = map(lambda d: Chunk(d[0], d[1], d[2]), terrainData)
+    terrainData = TerrainGenerator.generate(RES_X, RES_Y, RES_Z, time.time())
+    b = time.time()
+    print "Generated terrain. It took %.1fs." % (b-a)
+
+    # Save list of terrain/geometry chunks.
+    # Initialization must be done on the main thread as VBOs must be generated
+    # on the main thread.
+    a = time.time()
+    chunks = map(lambda d: Chunk(d[0], d[1], d[2], d[3], d[4]), terrainData)
     b = time.time()
     print "Generated chunks. It took %.1fs." % (b-a)
 
     # To test chunk serialization, do a round-trip to disk.
+    # Save to disk... 
+    a = time.time()
     fileNames = [tempfile.mktemp() for i in range(0, len(chunks))]
     for fileName, chunk in zip(fileNames, chunks):
         chunk.saveToDisk(fileName)
         chunk.destroy() # frees VBOs
     del chunks
+    b = time.time()
+    print "Saved chunks to disk. It took %.1fs." % (b-a)
 
+    # Load from disk... 
+    a = time.time()
     chunks = []
     for fileName in fileNames:
         chunks.append(Chunk.loadFromDisk(fileName))
+    b = time.time()
+    print "Loaded chunks from disk. It took %.1fs." % (b-a)
     print "Completed chunk round-trip to disk."
 
     pyglet.app.run()

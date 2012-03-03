@@ -4,80 +4,11 @@ from pyglet.gl import *
 from ctypes import pointer, sizeof
 import itertools
 import pickle
+import TerrainGenerator
 
 
 class Chunk:
 	"Chunk of terrain and associated geometry."
-
-    @staticmethod
-    def generateGeometry(voxelData, minP, maxP):
-        """Generate one gigantic batch containing all polygon data.
-        Many of the faces are hidden, so there is room for improvement here.
-        voxelData - Represents the voxel terrain values for the points between
-                    minP and maxP. The chunk is translated so that
-                    voxelData[0,0,0] corresponds to (minX, minY, minZ).
-                    The size of the chunk is unscaled so that, for example, the
-                    width of the chunk is equal to maxP-minP. Ditto for the
-                    other major axii.
-        """
-		L = 0.5 # Half-length of each block along each of its sides.
-        minX, minY, minZ = minP
-        maxX, maxY, maxZ = maxP
-
-        verts = []
-        norms = []
-
-        for x,y,z in itertools.product(range(minX, maxX),
-                                       range(minY, maxY),
-                                       range(minZ, maxZ)):
-            if not voxelData[x-minX, y-minY, z-minZ]:
-                continue
-
-            # Top Face
-
-            if not (y+1<maxY and voxelData[x-minX, y-minY+1, z-minZ]):
-                verts.extend([x-L, y+L, z+L,  x+L, y+L, z-L,  x-L, y+L, z-L,
-                              x-L, y+L, z+L,  x+L, y+L, z+L,  x+L, y+L, z-L])
-                norms.extend([  0,  +1,   0,    0,  +1,   0,    0,  +1,   0,
-                                0,  +1,   0,    0,  +1,   0,    0,  +1,   0])
-
-            # Bottom Face
-            if not (y-1>=minY and voxelData[x-minX, y-minY-1, z-minZ]):
-                verts.extend([x-L, y-L, z-L,  x+L, y-L, z-L,  x-L, y-L, z+L,
-                              x+L, y-L, z-L,  x+L, y-L, z+L,  x-L, y-L, z+L])
-                norms.extend([  0,  -1,   0,      0, -1,  0,    0,  -1,   0,
-                                0,  -1,   0,      0, -1,  0,    0,  -1,   0])
-
-            # Front Face
-            if not (z+1<maxZ and voxelData[x-minX, y-minY, z-minZ+1]):
-                verts.extend([x-L, y-L, z+L,  x+L, y+L, z+L,  x-L, y+L, z+L,
-                              x-L, y-L, z+L,  x+L, y-L, z+L,  x+L, y+L, z+L])
-                norms.extend([  0,   0,  +1,    0,   0,  +1,    0,   0,  +1,
-                                0,   0,  +1,    0,   0,  +1,    0,   0,  +1])
-
-            # Back Face
-            if not (z-1>=minZ and voxelData[x-minX, y-minY, z-minZ-1]):
-                verts.extend([x-L, y+L, z-L,  x+L, y+L, z-L,  x-L, y-L, z-L,
-                              x+L, y+L, z-L,  x+L, y-L, z-L,  x-L, y-L, z-L])
-                norms.extend([  0,   0,  -1,    0,   0,  -1,    0,   0,  -1,
-                                0,   0,  -1,    0,   0,  -1,    0,   0,  -1])
-
-            # Right Face
-            if not (x+1<maxX and voxelData[x-minX+1, y-minY, z-minZ]):
-                verts.extend([x+L, y+L, z-L,  x+L, y+L, z+L,  x+L, y-L, z+L,
-                              x+L, y-L, z-L,  x+L, y+L, z-L,  x+L, y-L, z+L])
-                norms.extend([ +1,   0,   0,   +1,   0,   0,   +1,   0,   0,
-                               +1,   0,   0,   +1,   0,   0,   +1,   0,   0])
-
-            # Left Face
-            if not (x-1>=minX and voxelData[x-minX-1, y-minY, z-minZ]):
-                verts.extend([x-L, y-L, z+L,  x-L, y+L, z+L,  x-L, y+L, z-L,
-                              x-L, y-L, z+L,  x-L, y+L, z-L,  x-L, y-L, z-L])
-                norms.extend([ -1,   0,   0,   -1,   0,   0,   -1,   0,   0,
-                               -1,   0,   0,   -1,   0,   0,   -1,   0,   0])
-
-        return verts, norms
-
 
     @staticmethod
     def createVertexBufferObject(verts):
@@ -89,18 +20,15 @@ class Chunk:
         return vbo_verts
 
 
-    def __init__(self, voxelData, minP, maxP):
+    def __init__(self, voxelData, verts, norms, minP, maxP):
 		self.minP = minP # extents of the chunk in world-space
 		self.maxP = maxP #   "
 		self.voxelData = voxelData # the actual terrain data for the chunk
 
-		# Generate geometry for the chunk.
-        verts, norms = self.generateGeometry(voxelData, minP, maxP)
+        # Send geometry to the GPU.
         self.numTrianglesInBatch = len(verts)/3
         self.vbo_verts = self.createVertexBufferObject(verts)
-        del verts
         self.vbo_norms = self.createVertexBufferObject(norms)
-        del norms
 
 
     def bind(self):
@@ -142,4 +70,5 @@ class Chunk:
 		voxelData = onDiskFormat[1]
 		minP = onDiskFormat[2]
 		maxP = onDiskFormat[3]
-		return Chunk(voxelData, minP, maxP)
+        verts, norms = TerrainGenerator.generateGeometry(voxelData, minP, maxP)
+		return Chunk(voxelData, verts, norms, minP, maxP)
