@@ -144,8 +144,11 @@ def main():
 
     terrainGenerator = TerrainGenerator(RES_X, RES_Y, RES_Z, time.time())
     terrainData = terrainGenerator.generate()
+
+    a = time.time()
     chunks = map(lambda d: Chunk(d[0], d[1], d[2]), terrainData)
-    print "Generated chunks."
+    b = time.time()
+    print "Generated chunks. It took %.1fs." % (b-a)
 
     # To test chunk serialization, do a round-trip to disk.
     fileNames = [tempfile.mktemp() for i in range(0, len(chunks))]

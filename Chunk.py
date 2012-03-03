@@ -24,60 +24,53 @@ class Chunk:
         minX, minY, minZ = minP
         maxX, maxY, maxZ = maxP
 
-        def getVoxelData(x, y, z):
-            if x>=minX and x<maxX and \
-               y>=minY and y<maxY and \
-               z>=minZ and z<maxZ:
-                return voxelData[x-minX, y-minY, z-minZ]
-            else:
-                return False
-
         verts = []
         norms = []
 
         for x,y,z in itertools.product(range(minX, maxX),
                                        range(minY, maxY),
                                        range(minZ, maxZ)):
-            if not getVoxelData(x,y,z):
+            if not voxelData[x-minX, y-minY, z-minZ]:
                 continue
 
             # Top Face
-            if not getVoxelData(x,y+1,z):
+
+            if not (y+1<maxY and voxelData[x-minX, y-minY+1, z-minZ]):
                 verts.extend([x-L, y+L, z+L,  x+L, y+L, z-L,  x-L, y+L, z-L,
                               x-L, y+L, z+L,  x+L, y+L, z+L,  x+L, y+L, z-L])
                 norms.extend([  0,  +1,   0,    0,  +1,   0,    0,  +1,   0,
                                 0,  +1,   0,    0,  +1,   0,    0,  +1,   0])
 
             # Bottom Face
-            if not getVoxelData(x,y-1,z):
+            if not (y-1>=minY and voxelData[x-minX, y-minY-1, z-minZ]):
                 verts.extend([x-L, y-L, z-L,  x+L, y-L, z-L,  x-L, y-L, z+L,
                               x+L, y-L, z-L,  x+L, y-L, z+L,  x-L, y-L, z+L])
                 norms.extend([  0,  -1,   0,      0, -1,  0,    0,  -1,   0,
                                 0,  -1,   0,      0, -1,  0,    0,  -1,   0])
 
             # Front Face
-            if not getVoxelData(x,y,z+1):
+            if not (z+1<maxZ and voxelData[x-minX, y-minY, z-minZ+1]):
                 verts.extend([x-L, y-L, z+L,  x+L, y+L, z+L,  x-L, y+L, z+L,
                               x-L, y-L, z+L,  x+L, y-L, z+L,  x+L, y+L, z+L])
                 norms.extend([  0,   0,  +1,    0,   0,  +1,    0,   0,  +1,
                                 0,   0,  +1,    0,   0,  +1,    0,   0,  +1])
 
             # Back Face
-            if not getVoxelData(x,y,z-1):
+            if not (z-1>=minZ and voxelData[x-minX, y-minY, z-minZ-1]):
                 verts.extend([x-L, y+L, z-L,  x+L, y+L, z-L,  x-L, y-L, z-L,
                               x+L, y+L, z-L,  x+L, y-L, z-L,  x-L, y-L, z-L])
                 norms.extend([  0,   0,  -1,    0,   0,  -1,    0,   0,  -1,
                                 0,   0,  -1,    0,   0,  -1,    0,   0,  -1])
 
             # Right Face
-            if not getVoxelData(x+1,y,z):
+            if not (x+1<maxX and voxelData[x-minX+1, y-minY, z-minZ]):
                 verts.extend([x+L, y+L, z-L,  x+L, y+L, z+L,  x+L, y-L, z+L,
                               x+L, y-L, z-L,  x+L, y+L, z-L,  x+L, y-L, z+L])
                 norms.extend([ +1,   0,   0,   +1,   0,   0,   +1,   0,   0,
                                +1,   0,   0,   +1,   0,   0,   +1,   0,   0])
 
             # Left Face
-            if not getVoxelData(x-1,y,z):
+            if not (x-1>=minX and voxelData[x-minX-1, y-minY, z-minZ]):
                 verts.extend([x-L, y-L, z+L,  x-L, y+L, z+L,  x-L, y+L, z-L,
                               x-L, y-L, z+L,  x-L, y+L, z-L,  x-L, y-L, z-L])
                 norms.extend([ -1,   0,   0,   -1,   0,   0,   -1,   0,   0,
