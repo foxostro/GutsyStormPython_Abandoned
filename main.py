@@ -79,9 +79,9 @@ def setupGLState():
     glLightfv(GL_LIGHT0, GL_DIFFUSE, arrayOfGLfloat(0.9, 0.9, 0.9, 1.0))
     glLightfv(GL_LIGHT0, GL_SPECULAR, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
 
-    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, arrayOfGLfloat(0.8, 0.5, 0.5, 1.0))
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, arrayOfGLfloat(0.5, 0.5, 0.5, 1.0))
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, arrayOfGLfloat(1, 1, 1, 1))
-    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10)
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 1)
 
 
 def createShaderObject():
@@ -203,20 +203,17 @@ def update(dt):
         cameraPos = vec.add(cameraPos, acceleration)
 
     if keysDown[key.LEFT]:
-        deltaRot = quat.quatFromAxisAngle(vec.vec(0,1,0), -cameraRotSpeed*dt)
-        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
-    elif keysDown[key.RIGHT]:
         deltaRot = quat.quatFromAxisAngle(vec.vec(0,1,0), cameraRotSpeed*dt)
         cameraRot = quat.mulByQuat(cameraRot, deltaRot)
-
-    localAxisX = vec.normalize(quat.mulByVec(cameraRot, vec.vec(1,0,0)))
+    elif keysDown[key.RIGHT]:
+        deltaRot = quat.quatFromAxisAngle(vec.vec(0,1,0), -cameraRotSpeed*dt)
+        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
 
     if keysDown[key.UP]:
-        deltaRot = quat.quatFromAxisAngle(localAxisX, -cameraRotSpeed*dt)
-        print localAxisX
+        deltaRot = quat.quatFromAxisAngle(vec.vec(1,0,0), -cameraRotSpeed*dt)
         cameraRot = quat.mulByQuat(cameraRot, deltaRot)
     elif keysDown[key.DOWN]:
-        deltaRot = quat.quatFromAxisAngle(localAxisX, cameraRotSpeed*dt)
+        deltaRot = quat.quatFromAxisAngle(vec.vec(1,0,0), cameraRotSpeed*dt)
         cameraRot = quat.mulByQuat(cameraRot, deltaRot)
 
 pyglet.clock.schedule(update)
@@ -224,15 +221,17 @@ pyglet.clock.schedule(update)
 
 @window.event
 def on_key_press(symbol, modifiers):
-    global useWireframe, keysDown
+    global useWireframe, keysDown, cameraRot
 
     keysDown[symbol] = True
 
     if symbol == key.R:
         useWireframe = not useWireframe
+    elif symbol == key.I:
+        cameraRot = quat.quatFromAxisAngle(vec.vec(0,1,0), 0)
     elif symbol == key.P:
         print "Camera Position:", cameraPos
-        print "Camera Rotation:", cameraRot
+        print "Camera Rotation:", quat.quatToAxisAngle(cameraRot)
     elif symbol == key.ESCAPE:
         pyglet.app.exit()
 
@@ -274,7 +273,7 @@ def on_draw():
 
     # Apply camera transformation.
     axis, angle = quat.quatToAxisAngle(cameraRot)
-    glRotatef(angle * 180.0/math.pi, axis[0], axis[1], axis[2])
+    glRotatef(angle * 180.0/math.pi, -axis[0], -axis[1], -axis[2])
     del axis, angle
     glTranslatef(-cameraPos[0], -cameraPos[1], -cameraPos[2])
 

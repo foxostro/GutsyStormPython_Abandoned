@@ -33,10 +33,15 @@ def conjugate(q):
 
 def mulByQuat(q, r):
     "Multiplying q1 with q2 applies the rotation q2 to q1"
-    return quat(r[w]*q[x] + r[x]*q[w] - r[y]*q[z] + r[z]*q[y],
-                r[w]*q[y] + r[x]*q[z] + r[y]*q[w] - r[z]*q[x],
-                r[w]*q[z] - r[x]*q[y] + r[y]*q[x] + r[z]*q[w],
-                r[w]*q[w] - r[x]*q[x] - r[y]*q[y] - r[z]*q[z])
+    x1, y1, z1, w1 = q
+    x2, y2, z2, w2 = r
+
+    w3 = w1*w2 - x1*x2 - y1*y2 - z1*z2
+    x3 = w1*x2 + x1*w2 + y1*z2 - z1*y2
+    y3 = w1*y2 - x1*z2 + y1*w2 + z1*x2
+    z3 = w1*z2 + x1*y2 - y1*x2 + z1*w2
+
+    return quat(x3, y3, z3, w3)
 
 
 def mulByVec(q, v):
@@ -67,3 +72,30 @@ def quatToAxisAngle(q):
                        q[y] / scale,
                        q[z] / scale)
     return axis, angle
+
+
+if __name__ == "__main__":
+    print "Running tests."
+
+    v1 = vec.vec(0.0, 0.0, 0.0)
+    v2 = vec.vec(100.0, 100.0, 100.0)
+    r1 = quatFromAxisAngle(vec.vec(0,1,0), 0.0)
+    r2 = quatFromAxisAngle(vec.vec(0,1,0), math.pi/2.0)
+    r3 = quatFromAxisAngle(vec.vec(1,0,0), -math.pi/2.0)
+    r4 = quatFromAxisAngle(vec.vec(1,0,0), -math.pi/4.0)
+    i = quat(0.0, 0.0, 0.0, 1.0)
+
+    assert mulByQuat(i, conjugate(i)) == i
+    assert vec.isEqual(mulByQuat(i, r1), r1)
+    assert vec.isEqual(mulByQuat(r1, i), r1)
+
+    assert vec.isEqual(mulByVec(i, v1), v1)
+    assert vec.isEqual(mulByVec(i, v2), v2)
+
+    assert vec.isEqual(mulByVec(r2, vec.vec(0,0,2)), vec.vec(2,0,0))
+    assert vec.isEqual(mulByVec(r1, vec.vec(0,0,2)), vec.vec(0,0,2))
+
+    assert vec.isEqual(mulByVec(r3, vec.vec(0,0,2)), vec.vec(0,2,0))
+    assert vec.isEqual(mulByVec(r4, vec.vec(0,0,2)), vec.vec(0,math.sqrt(2),math.sqrt(2)))
+
+    print "Passed."

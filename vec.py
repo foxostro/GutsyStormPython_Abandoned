@@ -31,3 +31,13 @@ def normalize(v):
 
 def add(v1, v2):
     return vec(v1[x]+v2[x], v1[y]+v2[y], v1[z]+v2[z])
+
+
+def sub(v1, v2):
+    return vec(v1[x]-v2[x], v1[y]-v2[y], v1[z]-v2[z])
+
+
+def isEqual(v1, v2):
+    return abs(v1[x]-v2[x])<eps and \
+           abs(v1[y]-v2[y])<eps and \
+           abs(v1[z]-v2[z])<eps
