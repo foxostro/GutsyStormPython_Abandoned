@@ -9,11 +9,15 @@ from pyglet.gl import *
 from pyglet.window import key
 import random
 import time
+import math
 import tempfile
+from collections import defaultdict
 
 from Shader import Shader
 from Chunk import Chunk
 import TerrainGenerator
+import vec
+import quat
 
 
 RES_X = 128
@@ -21,14 +25,18 @@ RES_Y = 64
 RES_Z = 128
 
 useWireframe = False
-rot = 0.0
 shader = None
 fps_display = None
 chunks = None
+keysDown = defaultdict(bool)
+cameraPos = vec.vec(0.0, 0.0, 100.0)
+cameraRot = quat.quatFromAxisAngle(vec.vec(0,1,0), 0)
+cameraSpeed = 10.0
+cameraRotSpeed = 1.0
 
 
-def vec(*args):
-    "Convenience function to create a ctypes array of floats"
+def arrayOfGLfloat(*args):
+    "Convenience function to create a ctypes array of GLfloats"
     return (GLfloat * len(args))(*args)
 
 
@@ -58,25 +66,21 @@ window = createWindow()
 def setupGLState():
     glClearColor(0.2, 0.4, 0.5, 1.0)
 
-    gluLookAt(10.0, 50.0, 64.0,  # Eye
-               0.0,  0.0,  0.0,  # Center
-               0.0,  1.0,  0.0)  # Up
-
     glEnable(GL_CULL_FACE)
     glFrontFace(GL_CCW)
 
-    # Simple light setup.  On Windows GL_LIGHT0 is enabled by default, but this is
-    # not the case on Linux or Mac, so remember to always include it.
+    # Simple light setup. On Windows GL_LIGHT0 is enabled by default, but this
+    # is not the case on Linux or Mac.
     glEnable(GL_LIGHTING)
     glEnable(GL_LIGHT0)
 
-    glLightfv(GL_LIGHT0, GL_POSITION, vec(20.0, 40.0, 30.0, 0.0))
-    glLightfv(GL_LIGHT0, GL_AMBIENT, vec(0.3, 0.3, 0.3, 1.0))
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, vec(0.9, 0.9, 0.9, 1.0))
-    glLightfv(GL_LIGHT0, GL_SPECULAR, vec(1.0, 1.0, 1.0, 1.0))
+    glLightfv(GL_LIGHT0, GL_POSITION, arrayOfGLfloat(20.0, 40.0, 30.0, 0.0))
+    glLightfv(GL_LIGHT0, GL_AMBIENT, arrayOfGLfloat(0.3, 0.3, 0.3, 1.0))
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, arrayOfGLfloat(0.9, 0.9, 0.9, 1.0))
+    glLightfv(GL_LIGHT0, GL_SPECULAR, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
 
-    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, vec(0.8, 0.5, 0.5, 1.0))
-    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, vec(1, 1, 1, 1))
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, arrayOfGLfloat(0.8, 0.5, 0.5, 1.0))
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, arrayOfGLfloat(1, 1, 1, 1))
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10)
 
 
@@ -144,7 +148,9 @@ def main():
 
     # Generate terrain data and geometry.
     a = time.time()
-    terrainData = TerrainGenerator.generate(RES_X, RES_Y, RES_Z, time.time())
+    seed = 1330765820.45 # time.time()
+    print "seed:", seed
+    terrainData = TerrainGenerator.generate(RES_X, RES_Y, RES_Z, seed)
     b = time.time()
     print "Generated terrain. It took %.1fs." % (b-a)
 
@@ -156,46 +162,88 @@ def main():
     b = time.time()
     print "Generated chunks. It took %.1fs." % (b-a)
 
-    # To test chunk serialization, do a round-trip to disk.
-    # Save to disk... 
-    a = time.time()
-    fileNames = [tempfile.mktemp() for i in range(0, len(chunks))]
-    for fileName, chunk in zip(fileNames, chunks):
-        chunk.saveToDisk(fileName)
-        chunk.destroy() # frees VBOs
-    del chunks
-    b = time.time()
-    print "Saved chunks to disk. It took %.1fs." % (b-a)
-
-    # Load from disk... 
-    a = time.time()
-    chunks = []
-    for fileName in fileNames:
-        chunks.append(Chunk.loadFromDisk(fileName))
-    b = time.time()
-    print "Loaded chunks from disk. It took %.1fs." % (b-a)
-    print "Completed chunk round-trip to disk."
+    ## To test chunk serialization, do a round-trip to disk.
+    ## Save to disk...
+    #a = time.time()
+    #fileNames = [tempfile.mktemp() for i in range(0, len(chunks))]
+    #for fileName, chunk in zip(fileNames, chunks):
+    #    chunk.saveToDisk(fileName)
+    #    chunk.destroy() # frees VBOs
+    #del chunks
+    #b = time.time()
+    #print "Saved chunks to disk. It took %.1fs." % (b-a)
+    #
+    ## Load from disk...
+    #a = time.time()
+    #chunks = []
+    #for fileName in fileNames:
+    #    chunks.append(Chunk.loadFromDisk(fileName))
+    #b = time.time()
+    #print "Loaded chunks from disk. It took %.1fs." % (b-a)
+    #print "Completed chunk round-trip to disk."
 
     pyglet.app.run()
 
 
 def update(dt):
-    global rot
-    rot += 5 * dt
-    rot %= 360
+    global cameraPos, cameraRot
+
+    if keysDown[key.W]:
+        acceleration = quat.mulByVec(cameraRot, vec.vec(0, 0, -cameraSpeed*dt))
+        cameraPos = vec.add(cameraPos, acceleration)
+    elif keysDown[key.S]:
+        acceleration = quat.mulByVec(cameraRot, vec.vec(0, 0, cameraSpeed*dt))
+        cameraPos = vec.add(cameraPos, acceleration)
+
+    if keysDown[key.A]:
+        acceleration = quat.mulByVec(cameraRot, vec.vec(-cameraSpeed*dt, 0, 0))
+        cameraPos = vec.add(cameraPos, acceleration)
+    elif keysDown[key.D]:
+        acceleration = quat.mulByVec(cameraRot, vec.vec(cameraSpeed*dt, 0, 0))
+        cameraPos = vec.add(cameraPos, acceleration)
+
+    if keysDown[key.LEFT]:
+        deltaRot = quat.quatFromAxisAngle(vec.vec(0,1,0), -cameraRotSpeed*dt)
+        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
+    elif keysDown[key.RIGHT]:
+        deltaRot = quat.quatFromAxisAngle(vec.vec(0,1,0), cameraRotSpeed*dt)
+        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
+
+    localAxisX = vec.normalize(quat.mulByVec(cameraRot, vec.vec(1,0,0)))
+
+    if keysDown[key.UP]:
+        deltaRot = quat.quatFromAxisAngle(localAxisX, -cameraRotSpeed*dt)
+        print localAxisX
+        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
+    elif keysDown[key.DOWN]:
+        deltaRot = quat.quatFromAxisAngle(localAxisX, cameraRotSpeed*dt)
+        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
+
 pyglet.clock.schedule(update)
 
 
 @window.event
 def on_key_press(symbol, modifiers):
-    global useWireframe
+    global useWireframe, keysDown
 
-    if symbol == key.W:
+    keysDown[symbol] = True
+
+    if symbol == key.R:
         useWireframe = not useWireframe
-        return pyglet.event.EVENT_HANDLED
+    elif symbol == key.P:
+        print "Camera Position:", cameraPos
+        print "Camera Rotation:", cameraRot
     elif symbol == key.ESCAPE:
         pyglet.app.exit()
-        return pyglet.event.EVENT_HANDLED
+
+    return pyglet.event.EVENT_HANDLED
+
+
+@window.event
+def on_key_release(symbol, modifiers):
+    global keysDown
+    keysDown[symbol] = False
+    return pyglet.event.EVENT_HANDLED
 
 
 @window.event
@@ -223,8 +271,14 @@ def on_draw():
     glEnable(GL_LIGHTING)
 
     glPushMatrix()
-    glRotatef(rot, 0, 1, 0)
-    glTranslatef(-RES_X/2, -RES_Y/2, -RES_Z/2) # terrain rotates at center, not the corner
+
+    # Apply camera transformation.
+    axis, angle = quat.quatToAxisAngle(cameraRot)
+    glRotatef(angle * 180.0/math.pi, axis[0], axis[1], axis[2])
+    del axis, angle
+    glTranslatef(-cameraPos[0], -cameraPos[1], -cameraPos[2])
+
+    glTranslatef(-RES_X/2, -RES_Y/2, -RES_Z/2) # terrain position is at its center
     shader.bind()
     glEnableClientState(GL_VERTEX_ARRAY)
     glEnableClientState(GL_NORMAL_ARRAY)
