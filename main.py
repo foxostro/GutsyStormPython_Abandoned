@@ -16,8 +16,7 @@ from collections import defaultdict
 from Shader import Shader
 from Chunk import Chunk
 import TerrainGenerator
-import vec
-import quat
+from math3D import Quaternion, Vector3
 
 
 RES_X = 128
@@ -29,8 +28,8 @@ shader = None
 fps_display = None
 chunks = None
 keysDown = defaultdict(bool)
-cameraPos = vec.vec(0.0, 0.0, 100.0)
-cameraRot = quat.quatFromAxisAngle(vec.vec(0,1,0), 0)
+cameraPos = Vector3(0.0, 0.0, 100.0)
+cameraRot = Quaternion.fromAxisAngle(Vector3(0,1,0), 0)
 cameraSpeed = 10.0
 cameraRotSpeed = 1.0
 
@@ -189,32 +188,32 @@ def update(dt):
     global cameraPos, cameraRot
 
     if keysDown[key.W]:
-        acceleration = quat.mulByVec(cameraRot, vec.vec(0, 0, -cameraSpeed*dt))
-        cameraPos = vec.add(cameraPos, acceleration)
+        acceleration = cameraRot.mulByVec(Vector3(0, 0, -cameraSpeed*dt))
+        cameraPos = cameraPos.add(acceleration)
     elif keysDown[key.S]:
-        acceleration = quat.mulByVec(cameraRot, vec.vec(0, 0, cameraSpeed*dt))
-        cameraPos = vec.add(cameraPos, acceleration)
+        acceleration = cameraRot.mulByVec(Vector3(0, 0, cameraSpeed*dt))
+        cameraPos = cameraPos.add(acceleration)
 
     if keysDown[key.A]:
-        acceleration = quat.mulByVec(cameraRot, vec.vec(-cameraSpeed*dt, 0, 0))
-        cameraPos = vec.add(cameraPos, acceleration)
+        acceleration = cameraRot.mulByVec(Vector3(-cameraSpeed*dt, 0, 0))
+        cameraPos = cameraPos.add(acceleration)
     elif keysDown[key.D]:
-        acceleration = quat.mulByVec(cameraRot, vec.vec(cameraSpeed*dt, 0, 0))
-        cameraPos = vec.add(cameraPos, acceleration)
+        acceleration = cameraRot.mulByVec(Vector3(cameraSpeed*dt, 0, 0))
+        cameraPos = cameraPos.add(acceleration)
 
     if keysDown[key.LEFT]:
-        deltaRot = quat.quatFromAxisAngle(vec.vec(0,1,0), cameraRotSpeed*dt)
-        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
+        deltaRot = cameraRot.fromAxisAngle(Vector3(0,1,0), cameraRotSpeed*dt)
+        cameraRot = cameraRot.mulByQuat(deltaRot)
     elif keysDown[key.RIGHT]:
-        deltaRot = quat.quatFromAxisAngle(vec.vec(0,1,0), -cameraRotSpeed*dt)
-        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
+        deltaRot = cameraRot.fromAxisAngle(Vector3(0,1,0), -cameraRotSpeed*dt)
+        cameraRot = cameraRot.mulByQuat(deltaRot)
 
     if keysDown[key.UP]:
-        deltaRot = quat.quatFromAxisAngle(vec.vec(1,0,0), -cameraRotSpeed*dt)
-        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
+        deltaRot = cameraRot.fromAxisAngle(Vector3(1,0,0), -cameraRotSpeed*dt)
+        cameraRot = cameraRot.mulByQuat(deltaRot)
     elif keysDown[key.DOWN]:
-        deltaRot = quat.quatFromAxisAngle(vec.vec(1,0,0), cameraRotSpeed*dt)
-        cameraRot = quat.mulByQuat(cameraRot, deltaRot)
+        deltaRot = cameraRot.fromAxisAngle(Vector3(1,0,0), cameraRotSpeed*dt)
+        cameraRot = cameraRot.mulByQuat(deltaRot)
 
 pyglet.clock.schedule(update)
 
@@ -228,10 +227,10 @@ def on_key_press(symbol, modifiers):
     if symbol == key.R:
         useWireframe = not useWireframe
     elif symbol == key.I:
-        cameraRot = quat.quatFromAxisAngle(vec.vec(0,1,0), 0)
+        cameraRot = Quaternion.fromAxisAngle(Vector3(0,1,0), 0)
     elif symbol == key.P:
         print "Camera Position:", cameraPos
-        print "Camera Rotation:", quat.quatToAxisAngle(cameraRot)
+        print "Camera Rotation:", Quaternion.toAxisAngle(cameraRot)
     elif symbol == key.ESCAPE:
         pyglet.app.exit()
 
@@ -272,7 +271,7 @@ def on_draw():
     glPushMatrix()
 
     # Apply camera transformation.
-    axis, angle = quat.quatToAxisAngle(cameraRot)
+    axis, angle = cameraRot.toAxisAngle()
     glRotatef(angle * 180.0/math.pi, -axis.x, -axis.y, -axis.z)
     del axis, angle
     glTranslatef(-cameraPos.x, -cameraPos.y, -cameraPos.z)
