@@ -8,13 +8,14 @@ import itertools
 import time
 import multiprocessing
 from pnoise import PerlinNoise
+from math3D import Vector3
 
 
 def groundGradient(terrainHeight, p):
     """Return a value between -1 and +1 so that a line through the y-axis
     maps to a smooth gradient of values from -1 to +1.
     """
-    y = p[1]
+    y = p.y
     if y < 0.0:
         return -1
     elif y > terrainHeight:
@@ -27,15 +28,15 @@ def isGround(terrainHeight, noiseSource0, noiseSource1, p):
     "Returns True if the point is ground, False otherwise."
     turbScaleX = 1.5
     turbScaleY = terrainHeight / 2.0
-    n = noiseSource0.getValue(float(p[0]),
-                              float(p[1]),
-                              float(p[2]))
+    n = noiseSource0.getValue(float(p.x),
+                              float(p.y),
+                              float(p.z))
     yFreq = turbScaleX * ((n+1) / 2.0)
     t = turbScaleY * \
-        noiseSource1.getValue(float(p[0]),
-                              float(p[1])*yFreq,
-                              float(p[2]))
-    pPrime = (p[0], p[1] + t, p[1])
+        noiseSource1.getValue(float(p.x),
+                              float(p.y)*yFreq,
+                              float(p.z))
+    pPrime = Vector3(p.x, p.y + t, p.y)
     return groundGradient(terrainHeight, pPrime) <= 0
 
 
@@ -50,8 +51,8 @@ def computeTerrainData(noiseSourceSeed0, noiseSourceSeed1, \
     the chunk is equal to maxP-minP. Ditto for the other major axii.
     """
     print "Generating terrain for chunk: minP=%r ; maxP=%r" % (minP, maxP)
-    minX, minY, minZ = minP
-    maxX, maxY, maxZ = maxP
+    minX, minY, minZ = minP.x, minP.y, minP.z
+    maxX, maxY, maxZ = maxP.x, maxP.y, maxP.z
 
     # Must create PerlinNoise here as Objective-C objects cannot be pickled and
     # send to other processes with IPC for use in multiprocessing.
@@ -65,7 +66,7 @@ def computeTerrainData(noiseSourceSeed0, noiseSourceSeed1, \
                                    range(minY, maxY),
                                    range(minZ, maxZ)):
         # p is in world-space, not chunk-space
-        p = (float(x), float(y), float(z))
+        p = Vector3(float(x), float(y), float(z))
         g = isGround(terrainHeight, noiseSource0, noiseSource1, p)
         voxelData[x - minX, y - minY, z - minZ] = g
 
@@ -83,8 +84,8 @@ def generateGeometry(voxelData, minP, maxP):
                 other major axii.
     """
     L = 0.5 # Half-length of each block along each of its sides.
-    minX, minY, minZ = minP
-    maxX, maxY, maxZ = maxP
+    minX, minY, minZ = minP.x, minP.y, minP.z
+    maxX, maxY, maxZ = maxP.x, maxP.y, maxP.z
 
     verts = []
     norms = []
@@ -172,10 +173,11 @@ def generateWorkBatches(stepX, stepZ, \
         for z in xrange(0, terrainDepth, stepZ):
             # The point here is to pack together arguments
             # to the terrainWorker processes.
-            args.append([noiseSourceSeed0, noiseSourceSeed1,
+            args.append([noiseSourceSeed0,
+                         noiseSourceSeed1,
                          terrainHeight,
-                         (x, 0, z), (x+stepX, terrainHeight, z+stepZ)
-                        ])
+                         Vector3(x, 0, z),
+                         Vector3(x+stepX, terrainHeight, z+stepZ)])
     return args
 
 
