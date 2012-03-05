@@ -2,33 +2,27 @@
 # vim:ts=4:sw=4:et:filetype=python
 "Routines which operate on quaternions."
 
+from collections import namedtuple
 import math
 import vec
 
 
+quat = namedtuple('quat', 'x y z w')
 eps = 1e-8
-x = 0
-y = 1
-z = 2
-w = 3
-
-
-def quat(x, y, z, w):
-    return (x, y, z, w)
 
 
 def normalize(q):
     "Returns a normalized quaternion (unit length)"
-    mag2 = q[x]*q[x] + q[y]*q[y] + q[z]*q[z] + q[w]*q[w]
+    mag2 = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w
     if abs(mag2) > eps and abs(mag2 - 1.0) > eps:
         mag = math.sqrt(mag2)
-        return quat(q[x] / mag, q[y] / mag, q[z] / mag, q[w] / mag)
+        return quat(q.x / mag, q.y / mag, q.z / mag, q.w / mag)
     else:
         return q
 
 
 def conjugate(q):
-    return quat(-q[x], -q[y], -q[z], q[w])
+    return quat(-q.x, -q.y, -q.z, q.w)
 
 
 def mulByQuat(q, r):
@@ -47,30 +41,30 @@ def mulByQuat(q, r):
 def mulByVec(q, v):
     """Multiplying a quaternion q with a vector v applies the q-rotation
     to v"""
-    q2 = mulByQuat(mulByQuat(q, quat(v[x], v[y], v[z], 0.0)), conjugate(q))
-    return vec.vec(q2[x], q2[y], q2[z])
+    q2 = mulByQuat(mulByQuat(q, quat(v.x, v.y, v.z, 0.0)), conjugate(q))
+    return vec.vec(q2.x, q2.y, q2.z)
 
 
 def quatFromAxisAngle(v, angle):
     "Create a quaternion from an axis vector and an angle."
     vn = vec.normalize(v)
     sinAngle = math.sin(angle / 2.0)
-    return (vn[x] * sinAngle,
-            vn[y] * sinAngle,
-            vn[z] * sinAngle,
-            math.cos(angle / 2.0))
+    return quat(vn.x * sinAngle,
+                vn.y * sinAngle,
+                vn.z * sinAngle,
+                math.cos(angle / 2.0))
 
 
 def quatToAxisAngle(q):
     "Accepts a quaternion and returns the axis vector and angle."
-    angle = 2.0 * math.acos(q[w])
-    scale = math.sqrt(1-q[w]*q[w])
+    angle = 2.0 * math.acos(q.w)
+    scale = math.sqrt(1-q.w*q.w)
     if scale < eps:
         axis = vec.vec(0,1,0)
     else:
-        axis = vec.vec(q[x] / scale,
-                       q[y] / scale,
-                       q[z] / scale)
+        axis = vec.vec(q.x / scale,
+                       q.y / scale,
+                       q.z / scale)
     return axis, angle
 
 

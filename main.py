@@ -273,9 +273,9 @@ def on_draw():
 
     # Apply camera transformation.
     axis, angle = quat.quatToAxisAngle(cameraRot)
-    glRotatef(angle * 180.0/math.pi, -axis[0], -axis[1], -axis[2])
+    glRotatef(angle * 180.0/math.pi, -axis.x, -axis.y, -axis.z)
     del axis, angle
-    glTranslatef(-cameraPos[0], -cameraPos[1], -cameraPos[2])
+    glTranslatef(-cameraPos.x, -cameraPos.y, -cameraPos.z)
 
     glTranslatef(-RES_X/2, -RES_Y/2, -RES_Z/2) # terrain position is at its center
     shader.bind()
