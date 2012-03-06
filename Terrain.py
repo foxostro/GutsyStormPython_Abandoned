@@ -15,7 +15,7 @@ from math3D import Vector3, Quaternion
 class Chunk:
 	"Chunk of terrain and associated geometry."
     sizeX = 16
-    sizeY = 64
+    sizeY = 16
     sizeZ = 16
 
     @staticmethod
@@ -35,6 +35,30 @@ class Chunk:
         self.numTrianglesInBatch = 0
         self.vbo_verts = GLuint(0)
         self.vbo_norms = GLuint(0)
+
+
+    @staticmethod
+    def computeChunkMinP(p):
+        return Vector3(math.floor(p.x / Chunk.sizeX) * Chunk.sizeX,
+                       math.floor(p.y / Chunk.sizeY) * Chunk.sizeY,
+                       math.floor(p.z / Chunk.sizeZ) * Chunk.sizeZ)
+
+
+    @staticmethod
+    def computeChunkID(p):
+        """Given an arbitrary point in space, retrieve the ID of the chunk
+        which resides there.
+        """
+        q = Chunk.computeChunkMinP(p)
+        return "%d_%d_%d" % (q.x, q.y, q.z)
+
+
+    def __repr__(self):
+        return "<Chunk %s>" % Chunk.computeChunkID(self.minP)
+
+
+    def __str__(self):
+        return "<Chunk %s>" % Chunk.computeChunkID(self.minP)
 
 
 	@classmethod
@@ -167,7 +191,7 @@ class Chunk:
         The size of the chunk is unscaled so that, for example, the width of
         the chunk is equal to maxP-minP. Ditto for the other major axii.
         """
-        print "Generating terrain for chunk: minP=%r ; maxP=%r" % (minP, maxP)
+        print "Generating terrain for chunk: %r" % minP
         minX, minY, minZ = int(minP.x), int(minP.y), int(minP.z)
         maxX, maxY, maxZ = int(maxP.x), int(maxP.y), int(maxP.z)
 
@@ -260,9 +284,9 @@ class Chunk:
 
 
 class ChunkStore:
-    RES_X = 128
+    RES_X = 256 # These are the dimensions of the active region.
     RES_Y = 64
-    RES_Z = 128
+    RES_Z = 256
 
 
     def __init__(self, seed):
@@ -272,28 +296,14 @@ class ChunkStore:
         self.cameraRot = Quaternion(0,0,0,1)
 
 
-    def getChunkMinP(self, p):
-        return Vector3(math.floor(p.x / Chunk.sizeX),
-                       math.floor(p.y / Chunk.sizeY),
-                       math.floor(p.z / Chunk.sizeZ))
-
-
-    def getChunkID(self, p):
-        """Given an arbitrary point in space, retrieve the ID of the chunk
-        which resides there.
-        """
-        q = self.getChunkMinP(p)
-        return "%d_%d_%d" % (q.x, q.y, q.z)
-
-
     def getChunk(self, p):
         "Retrieves a chunk of the game world at an arbritrary point in space."
-        chunkID = self.getChunkID(p)
+        chunkID = Chunk.computeChunkID(p)
         try:
             chunk = self.chunks[chunkID]
         except KeyError:
             # Chunk has not been created yet, so create it now.
-            minP = self.getChunkMinP(p)
+            minP = Chunk.computeChunkMinP(p)
             maxP = minP.add(Vector3(Chunk.sizeX, Chunk.sizeY, Chunk.sizeZ))
             chunk =  Chunk.fromProceduralGeneration(minP, maxP,
                                                     self.RES_Y, self.seed)
@@ -303,20 +313,35 @@ class ChunkStore:
 
 
     def getActiveChunks(self):
-        return self.chunks.values()
+        activeChunks = []
+
+        # Return all chunks near the camera.
+        x = self.cameraPos.x - self.RES_X/2
+        while x < (self.cameraPos.x + self.RES_X/2):
+            y = self.cameraPos.y - self.RES_Y/2
+            while y < (self.cameraPos.y + self.RES_Y/2):
+                z = self.cameraPos.z - self.RES_Z/2
+                while z < (self.cameraPos.z + self.RES_Z/2):
+                    chunk = self.getChunk(Vector3(x, y, z))
+                    activeChunks.append(chunk)
+                    z += Chunk.sizeZ
+                y += Chunk.sizeY
+            x += Chunk.sizeX
+
+        return activeChunks
 
 
     def getVisibleChunks(self):
-        return getActiveChunks() # TODO: only return chunks in the camera frustum
+        return self.chunks.values() # TODO: only return chunks in the camera frustum
 
 
-    def setCamera(p, r):
+    def setCamera(self, p, r):
         self.cameraPos = p
         self.cameraRot = r
 
 
 if __name__ == "__main__":
     chunkStore = ChunkStore(0)
-    assert chunkStore.getChunkID(Vector3(0.0, 0.0, 0.0)) == "0_0_0"
+    assert Chunk.computeChunkID(Vector3(0.0, 0.0, 0.0)) == "0_0_0"
     print chunkStore.getChunk(Vector3(0.0, 0.0, 0.0))
     print chunkStore.getActiveChunks()

@@ -23,7 +23,7 @@ shader = None
 fps_display = None
 chunkStore = None
 keysDown = defaultdict(bool)
-cameraPos = Vector3(0.0, 0.0, 100.0)
+cameraPos = Vector3(92.317, 33.122, 122.606)
 cameraRot = Quaternion.fromAxisAngle(Vector3(0,1,0), 0)
 cameraSpeed = 10.0
 cameraRotSpeed = 1.0
@@ -176,6 +176,7 @@ def update(dt):
         deltaRot = cameraRot.fromAxisAngle(Vector3(1,0,0), cameraRotSpeed*dt)
         cameraRot = cameraRot.mulByQuat(deltaRot)
 
+    chunkStore.setCamera(cameraPos, cameraRot)
     for chunk in chunkStore.getActiveChunks():
         chunk.update(dt)
 
@@ -241,7 +242,7 @@ def on_draw():
     glTranslatef(-cameraPos.x, -cameraPos.y, -cameraPos.z)
 
     shader.bind()
-    for chunk in chunkStore.getActiveChunks():
+    for chunk in chunkStore.getVisibleChunks():
         chunk.draw()
     shader.unbind()
     glPopMatrix()
