@@ -14,19 +14,14 @@ import tempfile
 from collections import defaultdict
 
 from Shader import Shader
-from Chunk import Chunk
-import TerrainGenerator
+import Terrain
 from math3D import Quaternion, Vector3
 
-
-RES_X = 128
-RES_Y = 64
-RES_Z = 128
 
 useWireframe = False
 shader = None
 fps_display = None
-chunks = None
+chunkStore = None
 keysDown = defaultdict(bool)
 cameraPos = Vector3(0.0, 0.0, 100.0)
 cameraRot = Quaternion.fromAxisAngle(Vector3(0,1,0), 0)
@@ -138,48 +133,14 @@ def main():
     global window
     global shader
     global fps_display
-    global chunks
+    global chunkStore
 
     setupGLState()
     shader = createShaderObject()
     fps_display = pyglet.clock.ClockDisplay()
-    print "Setup initial OpenGL state."
 
-    # Generate terrain data and geometry.
-    a = time.time()
     seed = 1330765820.45 # time.time()
-    print "seed:", seed
-    terrainData = TerrainGenerator.generate(RES_X, RES_Y, RES_Z, seed)
-    b = time.time()
-    print "Generated terrain. It took %.1fs." % (b-a)
-
-    # Save list of terrain/geometry chunks.
-    # Initialization must be done on the main thread as VBOs must be generated
-    # on the main thread.
-    a = time.time()
-    chunks = map(lambda d: Chunk(d[0], d[1], d[2], d[3], d[4]), terrainData)
-    b = time.time()
-    print "Generated chunks. It took %.1fs." % (b-a)
-
-    ## To test chunk serialization, do a round-trip to disk.
-    ## Save to disk...
-    #a = time.time()
-    #fileNames = [tempfile.mktemp() for i in range(0, len(chunks))]
-    #for fileName, chunk in zip(fileNames, chunks):
-    #    chunk.saveToDisk(fileName)
-    #    chunk.destroy() # frees VBOs
-    #del chunks
-    #b = time.time()
-    #print "Saved chunks to disk. It took %.1fs." % (b-a)
-    #
-    ## Load from disk...
-    #a = time.time()
-    #chunks = []
-    #for fileName in fileNames:
-    #    chunks.append(Chunk.loadFromDisk(fileName))
-    #b = time.time()
-    #print "Loaded chunks from disk. It took %.1fs." % (b-a)
-    #print "Completed chunk round-trip to disk."
+    chunkStore = Terrain.ChunkStore(seed)
 
     pyglet.app.run()
 
@@ -214,6 +175,9 @@ def update(dt):
     elif keysDown[key.DOWN]:
         deltaRot = cameraRot.fromAxisAngle(Vector3(1,0,0), cameraRotSpeed*dt)
         cameraRot = cameraRot.mulByQuat(deltaRot)
+
+    for chunk in chunkStore.getActiveChunks():
+        chunk.update(dt)
 
 pyglet.clock.schedule(update)
 
@@ -276,15 +240,9 @@ def on_draw():
     del axis, angle
     glTranslatef(-cameraPos.x, -cameraPos.y, -cameraPos.z)
 
-    glTranslatef(-RES_X/2, -RES_Y/2, -RES_Z/2) # terrain position is at its center
     shader.bind()
-    glEnableClientState(GL_VERTEX_ARRAY)
-    glEnableClientState(GL_NORMAL_ARRAY)
-    for chunk in chunks:
-        chunk.bind()
+    for chunk in chunkStore.getActiveChunks():
         chunk.draw()
-    glDisableClientState(GL_VERTEX_ARRAY)
-    glDisableClientState(GL_NORMAL_ARRAY)
     shader.unbind()
     glPopMatrix()
 
