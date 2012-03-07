@@ -13,6 +13,7 @@ from pnoise import PerlinNoise
 from math3D import Vector3, Quaternion
 
 
+numInFlightChunkTasks = 0
 WOULD_BLOCK = 0
 NOW_AVAILABLE = 1
 ERROR = 2
@@ -75,6 +76,7 @@ class Chunk:
 
     @classmethod
     def fromProceduralGeneration(cls, minP, maxP, terrainHeight, seed, pool):
+        global numInFlightChunkTasks
         chunk = Chunk()
         chunk.minP = minP # extents of the chunk in world-space
         chunk.maxP = maxP #   "
@@ -90,11 +92,14 @@ class Chunk:
         chunk.asyncTerrainResult = \
             pool.apply_async(asyncGenerateTerrain,
                              [seed, terrainHeight, minP, maxP])
+        numInFlightChunkTasks += 1
 
         return chunk
 
 
     def updateTerrainFromAsyncGenResults(self, block=False):
+        global numInFlightChunkTasks
+
         if not self.asyncTerrainResult:
             return NOW_AVAILABLE
 
@@ -114,11 +119,12 @@ class Chunk:
         if not self.asyncTerrainResult.successful():
             logger.error("Terrain generation failed for chunk %r" % self.minP)
             self.asyncTerrainResult = None
+            numInFlightChunkTasks -= 1
             return ERROR
 
         self.voxelData, self.verts, self.norms = self.asyncTerrainResult.get()
-
         self.asyncTerrainResult = None
+        numInFlightChunkTasks -= 1
 
         assert self.voxelData is not None
         assert self.verts is not None
@@ -213,6 +219,8 @@ class Chunk:
 
     @classmethod
     def loadFromDisk(cls, folder, chunkID, minP, maxP, pool):
+        global numInFlightChunkTasks
+
         chunk = Chunk()
         chunk.minP = minP # extents of the chunk in world-space
         chunk.maxP = maxP #   "
@@ -227,6 +235,7 @@ class Chunk:
         # Spin off a task to load the terrain.
         chunk.asyncTerrainResult = \
             pool.apply_async(asyncLoadTerrain, [folder, chunkID])
+        numInFlightChunkTasks += 1
 
         # Chunk will have no terrain or geometry until this has finished.
         #chunk.voxelData, chunk.verts, chunk.norms = \
@@ -401,11 +410,12 @@ class ChunkStore:
     RES_X = 128 # These are the dimensions of the active region.
     RES_Y = 64
     RES_Z = 128
-    chunkBufferGeneratingTimeBudget = 10.0 / 60.0
+    chunkVBOGenTimeBudget = 10.0 / 60.0
+    chunkVBOGenTimeBudgetForPrefetch = 1.0 / 60.0
     chunkSavingTimeBudget = 1.0 / 60.0
-    opportunisticTerrainGenerationTimeBudget = 1.0 / 60.0
-    opportunisticChunkLimit = 4
-    opportunisticRegionSize = 2
+    prefetchTimeBudget = 1.0 / 60.0
+    prefetchLimitChunksInFlight = 2
+    prefetchRegionSize = 2
 
 
     def __init__(self, seed):
@@ -457,17 +467,19 @@ class ChunkStore:
     def prefetchChunk(self, p):
         """If necessary, and if the cache is not yet full, generate the chunk
         at the specified point in space. Return True if a chunk was actually
-        generated.
+        prefetched.
         """
         chunkID = Chunk.computeChunkID(p)
         if chunkID in self.chunks:
             return False
-        else:
-            logger.info("opportunistically generating chunk " + chunkID)
+        elif numInFlightChunkTasks < self.prefetchLimitChunksInFlight:
+            logger.info("prefetching chunk " + chunkID)
             minP = Chunk.computeChunkMinP(p)
             chunk = self.generateOrLoadChunk(chunkID, minP)
             self.chunks[chunkID] = chunk
             return True
+        else:
+            return False
 
 
     def sync(self):
@@ -499,36 +511,38 @@ class ChunkStore:
             if chunk.maybeGenerateVBOs():
                 logger.info("Generated VBOs for chunk " + Chunk.computeChunkID(chunk.minP))
 
-            if time.time() - startTime > self.chunkBufferGeneratingTimeBudget:
+            if time.time() - startTime > self.chunkVBOGenTimeBudget:
+                break
+
+        startTime = time.time()
+        for chunk in self.chunks.values():
+            if chunk.maybeGenerateVBOs():
+                logger.info("Generated VBOs for chunk " + Chunk.computeChunkID(chunk.minP))
+
+            if time.time() - startTime > self.chunkVBOGenTimeBudgetForPrefetch:
                 break
 
 
     def perFrameChunkPrefetch(self, startTime):
         """Take some time to opportunistically generate/load chunks outside the
         active region in case we want them later. This will stop when the time
-        since startTime exceeds opportunisticTerrainGenerationTimeBudget.
+        since startTime exceeds prefetchTimeBudget.
         """
-        if time.time() - startTime > self.opportunisticTerrainGenerationTimeBudget:
+        if time.time() - startTime > self.prefetchTimeBudget:
             return
 
-        chunksActuallyGenerated = 0
-        x = self.cameraPos.x - self.RES_X * self.opportunisticRegionSize
-        while x < (self.cameraPos.x + self.RES_X * self.opportunisticRegionSize):
-            y = self.cameraPos.y - self.RES_Y * self.opportunisticRegionSize
-            while y < (self.cameraPos.y + self.RES_Y * self.opportunisticRegionSize):
-                z = self.cameraPos.z - self.RES_Z * self.opportunisticRegionSize
-                while z < (self.cameraPos.z + self.RES_Z * self.opportunisticRegionSize):
-                    if time.time() - startTime > self.opportunisticTerrainGenerationTimeBudget:
+        x = self.cameraPos.x - self.RES_X * self.prefetchRegionSize
+        while x < (self.cameraPos.x + self.RES_X * self.prefetchRegionSize):
+            y = self.cameraPos.y - self.RES_Y * self.prefetchRegionSize
+            while y < (self.cameraPos.y + self.RES_Y * self.prefetchRegionSize):
+                z = self.cameraPos.z - self.RES_Z * self.prefetchRegionSize
+                while z < (self.cameraPos.z + self.RES_Z * self.prefetchRegionSize):
+                    if time.time() - startTime > self.prefetchTimeBudget:
                         return
 
                     # May load/generate and cache another chunk, which is the
                     # whole point.
-                    if self.prefetchChunk(Vector3(x, y, z)):
-                        # Enforce a limit on the number of opportunistic chunks
-                        # which may be generated per frame.
-                        chunksActuallyGenerated += 1
-                        if chunksActuallyGenerated > self.opportunisticChunkLimit:
-                            return
+                    self.prefetchChunk(Vector3(x, y, z))
 
                     z += Chunk.sizeZ
                 y += Chunk.sizeY
@@ -543,17 +557,16 @@ class ChunkStore:
 
 
     def getActiveChunks(self):
+        "Return all chunks near the camera."
         activeChunks = []
 
-        # Return all chunks near the camera.
         x = self.cameraPos.x - self.RES_X/2
         while x < (self.cameraPos.x + self.RES_X/2):
             y = self.cameraPos.y - self.RES_Y/2
             while y < (self.cameraPos.y + self.RES_Y/2):
                 z = self.cameraPos.z - self.RES_Z/2
                 while z < (self.cameraPos.z + self.RES_Z/2):
-                    chunk = self.getChunk(Vector3(x, y, z))
-                    activeChunks.append(chunk)
+                    activeChunks.append(self.getChunk(Vector3(x, y, z)))
                     z += Chunk.sizeZ
                 y += Chunk.sizeY
             x += Chunk.sizeX
