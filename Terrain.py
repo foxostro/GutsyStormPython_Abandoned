@@ -401,9 +401,11 @@ class ChunkStore:
     RES_X = 128 # These are the dimensions of the active region.
     RES_Y = 64
     RES_Z = 128
-    chunksToSavePerFrame = 10
-    chunkBufferGeneratingTimeBudget = 5.0 / 30.0
-    chunkSavingTimeBudget = 1.0 / 30.0
+    chunkBufferGeneratingTimeBudget = 10.0 / 60.0
+    chunkSavingTimeBudget = 1.0 / 60.0
+    opportunisticTerrainGenerationTimeBudget = 1.0 / 60.0
+    opportunisticChunkLimit = 4
+    opportunisticRegionSize = 2
 
 
     def __init__(self, seed):
@@ -438,7 +440,8 @@ class ChunkStore:
 
 
     def getChunk(self, p):
-        "Retrieves a chunk of the game world at an arbritrary point in space."
+        """Retrieves a chunk of the game world at an arbritrary point in space.
+        """
         chunkID = Chunk.computeChunkID(p)
         chunk = None
         try:
@@ -451,6 +454,22 @@ class ChunkStore:
         return chunk
 
 
+    def prefetchChunk(self, p):
+        """If necessary, and if the cache is not yet full, generate the chunk
+        at the specified point in space. Return True if a chunk was actually
+        generated.
+        """
+        chunkID = Chunk.computeChunkID(p)
+        if chunkID in self.chunks:
+            return False
+        else:
+            logger.info("opportunistically generating chunk " + chunkID)
+            minP = Chunk.computeChunkMinP(p)
+            chunk = self.generateOrLoadChunk(chunkID, minP)
+            self.chunks[chunkID] = chunk
+            return True
+
+
     def sync(self):
         "Ensure all chunks are saved to disk."
         for chunk in self.chunks.values():
@@ -459,7 +478,9 @@ class ChunkStore:
 
 
     def perFramePartialSync(self):
-        "Save a few dirty chunks every frame to keep the game interactive."
+        """Save a few dirty chunks every frame to keep the game interactive.
+        May save any dirty chunk which is currently loaded into memory.
+        """
         startTime = time.time()
         for chunk in self.chunks.values():
             if chunk.dirty:
@@ -469,19 +490,56 @@ class ChunkStore:
                 break
 
 
-    def perfFramePartialVBOGeneration(self):
-        "Generate a few VBOs per frame to keep the game interactive."
+    def perFramePartialVBOGeneration(self):
+        """Generate a few VBOs per frame to keep the game interactive.
+        Only generates VBOs for chunks in the visible region.
+        """
         startTime = time.time()
         for chunk in self.getVisibleChunks():
-            chunk.maybeGenerateVBOs()
+            if chunk.maybeGenerateVBOs():
+                logger.info("Generated VBOs for chunk " + Chunk.computeChunkID(chunk.minP))
 
             if time.time() - startTime > self.chunkBufferGeneratingTimeBudget:
                 break
 
 
+    def perFrameChunkPrefetch(self, startTime):
+        """Take some time to opportunistically generate/load chunks outside the
+        active region in case we want them later. This will stop when the time
+        since startTime exceeds opportunisticTerrainGenerationTimeBudget.
+        """
+        if time.time() - startTime > self.opportunisticTerrainGenerationTimeBudget:
+            return
+
+        chunksActuallyGenerated = 0
+        x = self.cameraPos.x - self.RES_X * self.opportunisticRegionSize
+        while x < (self.cameraPos.x + self.RES_X * self.opportunisticRegionSize):
+            y = self.cameraPos.y - self.RES_Y * self.opportunisticRegionSize
+            while y < (self.cameraPos.y + self.RES_Y * self.opportunisticRegionSize):
+                z = self.cameraPos.z - self.RES_Z * self.opportunisticRegionSize
+                while z < (self.cameraPos.z + self.RES_Z * self.opportunisticRegionSize):
+                    if time.time() - startTime > self.opportunisticTerrainGenerationTimeBudget:
+                        return
+
+                    # May load/generate and cache another chunk, which is the
+                    # whole point.
+                    if self.prefetchChunk(Vector3(x, y, z)):
+                        # Enforce a limit on the number of opportunistic chunks
+                        # which may be generated per frame.
+                        chunksActuallyGenerated += 1
+                        if chunksActuallyGenerated > self.opportunisticChunkLimit:
+                            return
+
+                    z += Chunk.sizeZ
+                y += Chunk.sizeY
+            x += Chunk.sizeX
+
+
     def update(self, dt):
+        startTime = time.time()
         self.perFramePartialSync()
-        self.perfFramePartialVBOGeneration()
+        self.perFramePartialVBOGeneration()
+        #self.perFrameChunkPrefetch(startTime)
 
 
     def getActiveChunks(self):
