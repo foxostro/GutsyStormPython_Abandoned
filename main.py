@@ -177,8 +177,7 @@ def update(dt):
         cameraRot = cameraRot.mulByQuat(deltaRot)
 
     chunkStore.setCamera(cameraPos, cameraRot)
-    for chunk in chunkStore.getActiveChunks():
-        chunk.update(dt)
+    chunkStore.update(dt)
 
 pyglet.clock.schedule(update)
 
@@ -197,6 +196,7 @@ def on_key_press(symbol, modifiers):
         print "Camera Position:", cameraPos
         print "Camera Rotation:", Quaternion.toAxisAngle(cameraRot)
     elif symbol == key.ESCAPE:
+        chunkStore.sync()
         pyglet.app.exit()
 
     return pyglet.event.EVENT_HANDLED

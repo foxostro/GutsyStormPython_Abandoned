@@ -2,21 +2,49 @@
 # vim:ts=4:sw=4:et:filetype=python
 from pyglet.gl import *
 from ctypes import pointer, sizeof
+import os
 import itertools
 import pickle
 import numpy
 import time
 import math
-import multiprocessing
+import multiprocessing, logging
 from pnoise import PerlinNoise
 from math3D import Vector3, Quaternion
-import sys
 
 
-def procedurallyGenerateTerrain(seed, terrainHeight, minP, maxP):
-    sys.stdout.flush()
+WOULD_BLOCK = 0
+NOW_AVAILABLE = 1
+ERROR = 2
+logger=multiprocessing.log_to_stderr(logging.INFO)
+
+
+def asyncGenerateTerrain(seed, terrainHeight, minP, maxP):
     voxelData = Chunk.computeTerrainData(seed, terrainHeight, minP, maxP)
     verts, norms = Chunk.generateGeometry(voxelData, minP, maxP)
+    return voxelData, verts, norms
+
+
+def asyncLoadTerrain(folder, chunkID):
+    fn = Chunk.computeChunkFileName(folder, chunkID)
+    if not os.path.exists(fn):
+        raise Exception("File does not exist: %s" % fn)
+
+    logger.info("Loading chunk from disk: %r" % chunkID)
+    onDiskFormat = pickle.load(open(fn, "rb"))
+
+    if not len(onDiskFormat) == 4:
+        raise Exception("On disk chunk format is totally unrecognized.")
+
+    if not onDiskFormat[0] == "magic":
+        raise Exception("Chunk uses unsupported format version \"%r\"." % onDiskFormat[0])
+
+    voxelData = onDiskFormat[1]
+    minP = onDiskFormat[2]
+    maxP = onDiskFormat[3]
+
+    verts, norms = Chunk.generateGeometry(voxelData, minP, maxP)
+
     return voxelData, verts, norms
 
 
@@ -60,27 +88,66 @@ class Chunk:
         # Spin off a task to generate terrain and geometry.
         # Chunk will have no terrain or geometry until this has finished.
         chunk.asyncTerrainResult = \
-            pool.apply_async(procedurallyGenerateTerrain,
+            pool.apply_async(asyncGenerateTerrain,
                              [seed, terrainHeight, minP, maxP])
 
         return chunk
 
 
-    def update(self, dt):
-        if self.asyncTerrainResult and self.asyncTerrainResult.ready():
-            if not self.asyncTerrainResult.successful():
-                raise Exception("Terrain generation failed for " \
-                                "chunk %r" % self.minP)
-            self.voxelData, self.verts, self.norms = \
-                self.asyncTerrainResult.get()
-            assert len(self.verts)%3==0
-            self.numTrianglesInBatch = len(self.verts)/3
+    def updateTerrainFromAsyncGenResults(self, block=False):
+        if not self.asyncTerrainResult:
+            return NOW_AVAILABLE
+
+        # We may want to block and wait for results now.
+        if block and not self.asyncTerrainResult.ready():
+            logger.info("blocking to wait for terrain data")
+            self.asyncTerrainResult.wait(30)
+            if not self.asyncTerrainResult.ready():
+                raise Exception("Blocked for 30s waiting for terrain data " \
+                                "and never got it. It's probably not coming." \
+                                " Bailing out.")
+
+        # If results are not ready then bail out. 
+        if not self.asyncTerrainResult.ready():
+            return WOULD_BLOCK
+
+        if not self.asyncTerrainResult.successful():
+            logger.error("Terrain generation failed for chunk %r" % self.minP)
             self.asyncTerrainResult = None
-            self.vbo_verts = self.createVertexBufferObject(self.verts)
-            self.vbo_norms = self.createVertexBufferObject(self.norms)
+            return ERROR
+
+        self.voxelData, self.verts, self.norms = self.asyncTerrainResult.get()
+
+        self.asyncTerrainResult = None
+
+        assert self.voxelData is not None
+        assert self.verts is not None
+        assert self.norms is not None
+
+        assert len(self.verts)%3==0
+        self.numTrianglesInBatch = len(self.verts)/3
+
+        return NOW_AVAILABLE
+
+
+    def maybeGenerateVBOs(self):
+        "Check up on the async terrain generation task and maybe generate VBOs"
+        didSomething = False
+
+        if NOW_AVAILABLE == self.updateTerrainFromAsyncGenResults(False):
+            if self.verts and not self.vbo_verts:
+                self.vbo_verts = self.createVertexBufferObject(self.verts)
+                didSomething = True
+
+            if self.norms and not self.vbo_norms:
+                self.vbo_norms = self.createVertexBufferObject(self.norms)
+                didSomething = True
+
+        return didSomething
 
 
     def draw(self):
+        # If geometry is not available then there is nothing to do now.
         if (not self.vbo_verts) or (not self.vbo_norms):
             return
 
@@ -113,33 +180,61 @@ class Chunk:
         self.voxelData = None
 
 
-	def saveToDisk(self, fn):
+    @staticmethod
+    def computeChunkFileName(folder, chunkID):
+        return os.path.join(folder, chunkID)
+
+
+    def saveToDisk(self, folder, block=False):
+        """Saves the chunk if possible. Returns False is the chunk cannot be
+        saved for some reason such as terrain generation being in progress at
+        the moment.
+        block - If True then wait for terrain generation to complete and
+                save the terrain to disk. May take longer.
+        """
+        # First, make sure we can save right now. Maybe block to wait for
+        # terrain results to come back.
+        if self.updateTerrainFromAsyncGenResults(block) != NOW_AVAILABLE:
+            return False
+
+        if self.dirty:
+            assert self.voxelData is not None
+            assert self.minP is not None
+            assert self.maxP is not None
+
+            chunkID = Chunk.computeChunkID(self.minP)
+            logger.info("Saving chunk to disk: %r" % chunkID)
+            fn = Chunk.computeChunkFileName(folder, chunkID)
             onDiskFormat = ["magic", self.voxelData, self.minP, self.maxP]
             pickle.dump(onDiskFormat, open(fn, "wb"))
+            self.dirty = False
+            return True
 
 
     @classmethod
-	def loadFromDisk(cls, fn):
-        onDiskFormat = pickle.load(open(fn, "rb"))
-        if not len(onDiskFormat) == 4:
-            raise Exception("On disk chunk format is totally unrecognized.")
-        if not onDiskFormat[0] == "magic":
-            raise Exception("Chunk uses unsupported format version \"%r\"." % onDiskFormat[0])
-        voxelData = onDiskFormat[1]
-        minP = onDiskFormat[2]
-        maxP = onDiskFormat[3]
-        verts, norms = TerrainGenerator.generateGeometry(voxelData, minP, maxP)
-
-        # Build the chunk from the data we just loaded. 
+    def loadFromDisk(cls, folder, chunkID, minP, maxP, pool):
         chunk = Chunk()
-        chunk.minP = minP
-        chunk.maxP = maxP
-        chunk.voxelData = voxelData
-        chunk.numTrianglesInBatch = len(verts)/3
-        chunk.verts = verts
-        chunk.norms = norms
+        chunk.minP = minP # extents of the chunk in world-space
+        chunk.maxP = maxP #   "
         chunk.vbo_verts = GLuint(0)
         chunk.vbo_norms = GLuint(0)
+        chunk.voxelData = None
+        chunk.numTrianglesInBatch = 0
+        chunk.verts = None
+        chunk.norms = None
+        chunk.dirty = False
+
+        # Spin off a task to load the terrain.
+        chunk.asyncTerrainResult = \
+            pool.apply_async(asyncLoadTerrain, [folder, chunkID])
+
+        # Chunk will have no terrain or geometry until this has finished.
+        #chunk.voxelData, chunk.verts, chunk.norms = \
+        #    asyncLoadTerrain(folder, chunkID)
+        #assert len(chunk.verts)%3==0
+        #chunk.numTrianglesInBatch = len(chunk.verts)/3
+        #chunk.asyncTerrainResult = None
+
         return chunk
 
 
@@ -161,6 +256,7 @@ class Chunk:
 
     @staticmethod
     def createVertexBufferObject(verts):
+        assert verts
         vbo_verts = GLuint()
         glGenBuffers(1, pointer(vbo_verts))
         data = (GLfloat * len(verts))(*verts)
@@ -209,7 +305,7 @@ class Chunk:
         The size of the chunk is unscaled so that, for example, the width of
         the chunk is equal to maxP-minP. Ditto for the other major axii.
         """
-        print "Generating terrain for chunk: %r" % minP
+        logger.info("Generating terrain for chunk: %r" % minP)
         minX, minY, minZ = int(minP.x), int(minP.y), int(minP.z)
         maxX, maxY, maxZ = int(maxP.x), int(maxP.y), int(maxP.z)
 
@@ -302,35 +398,90 @@ class Chunk:
 
 
 class ChunkStore:
-    RES_X = 256 # These are the dimensions of the active region.
+    RES_X = 128 # These are the dimensions of the active region.
     RES_Y = 64
-    RES_Z = 256
+    RES_Z = 128
+    chunksToSavePerFrame = 10
+    chunkBufferGeneratingTimeBudget = 5.0 / 30.0
+    chunkSavingTimeBudget = 1.0 / 30.0
 
 
     def __init__(self, seed):
+        logger.info("Initializing ChunkStore")
         self.chunks = {}
         self.pool = multiprocessing.Pool(processes=8)
         self.seed = seed
         self.cameraPos = Vector3(0,0,0)
         self.cameraRot = Quaternion(0,0,0,1)
+        self.saveFolder = "world"
+        os.system("/bin/mkdir -p \'%s\'" % self.saveFolder)
+
+
+    def generateOrLoadChunk(self, chunkID, minP):
+        "Load the chunk from disk or generate it here and now."
+        chunk = None
+        maxP = minP.add(Vector3(Chunk.sizeX, Chunk.sizeY, Chunk.sizeZ))
+
+        if os.path.exists(Chunk.computeChunkFileName(self.saveFolder,chunkID)):
+            logger.info("Chunk seems to exist on disk; loading: %r" % chunkID)
+            chunk = Chunk.loadFromDisk(self.saveFolder,
+                                       chunkID,
+                                       minP, maxP,
+                                       self.pool)
+        else:
+            logger.info("Chunk does not exist on disk; generating: %r" % chunkID)
+            chunk =  Chunk.fromProceduralGeneration(minP, maxP,
+                                                    self.RES_Y,
+                                                    self.seed,
+                                                    self.pool)
+        return chunk
 
 
     def getChunk(self, p):
         "Retrieves a chunk of the game world at an arbritrary point in space."
         chunkID = Chunk.computeChunkID(p)
+        chunk = None
         try:
             chunk = self.chunks[chunkID]
         except KeyError:
-            # Chunk has not been created yet, so create it now.
             minP = Chunk.computeChunkMinP(p)
-            maxP = minP.add(Vector3(Chunk.sizeX, Chunk.sizeY, Chunk.sizeZ))
-            chunk =  Chunk.fromProceduralGeneration(minP, maxP,
-                                                    self.RES_Y,
-                                                    self.seed,
-                                                    self.pool)
+            chunk = self.generateOrLoadChunk(chunkID, minP)
             self.chunks[chunkID] = chunk
 
         return chunk
+
+
+    def sync(self):
+        "Ensure all chunks are saved to disk."
+        for chunk in self.chunks.values():
+            chunk.saveToDisk(self.saveFolder)
+        logger.info("sync'd chunks to disk")
+
+
+    def perFramePartialSync(self):
+        "Save a few dirty chunks every frame to keep the game interactive."
+        startTime = time.time()
+        for chunk in self.chunks.values():
+            if chunk.dirty:
+                chunk.saveToDisk(self.saveFolder)
+
+            if time.time() - startTime > self.chunkSavingTimeBudget:
+                break
+
+
+    def perfFramePartialVBOGeneration(self):
+        "Generate a few VBOs per frame to keep the game interactive."
+        startTime = time.time()
+        for chunk in self.getVisibleChunks():
+            chunk.maybeGenerateVBOs()
+
+            if time.time() - startTime > self.chunkBufferGeneratingTimeBudget:
+                break
+
+
+    def update(self, dt):
+        self.perFramePartialSync()
+        self.perfFramePartialVBOGeneration()
 
 
     def getActiveChunks(self):
@@ -353,7 +504,7 @@ class ChunkStore:
 
 
     def getVisibleChunks(self):
-        return self.chunks.values() # TODO: only return chunks in the camera frustum
+        return self.getActiveChunks() # TODO: only return chunks in the camera frustum
 
 
     def setCamera(self, p, r):
