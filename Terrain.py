@@ -10,47 +10,31 @@ import math
 import multiprocessing
 from pnoise import PerlinNoise
 from math3D import Vector3, Quaternion
+import sys
+
+
+def procedurallyGenerateTerrain(seed, terrainHeight, minP, maxP):
+    sys.stdout.flush()
+    voxelData = Chunk.computeTerrainData(seed, terrainHeight, minP, maxP)
+    verts, norms = Chunk.generateGeometry(voxelData, minP, maxP)
+    return voxelData, verts, norms
 
 
 class Chunk:
-	"Chunk of terrain and associated geometry."
+    "Chunk of terrain and associated geometry."
     sizeX = 16
     sizeY = 16
     sizeZ = 16
 
-    @staticmethod
-    def createVertexBufferObject(verts):
-        vbo_verts = GLuint()
-        glGenBuffers(1, pointer(vbo_verts))
-        data = (GLfloat * len(verts))(*verts)
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
-        glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
-        return vbo_verts
-
-
     def __init__(self):
-		self.minP = Vector3(0,0,0)
-		self.maxP = Vector3(0,0,0)
-		self.voxelData = None
+        self.minP = Vector3(0,0,0)
+        self.maxP = Vector3(0,0,0)
+        self.voxelData = None
         self.numTrianglesInBatch = 0
         self.vbo_verts = GLuint(0)
         self.vbo_norms = GLuint(0)
-
-
-    @staticmethod
-    def computeChunkMinP(p):
-        return Vector3(math.floor(p.x / Chunk.sizeX) * Chunk.sizeX,
-                       math.floor(p.y / Chunk.sizeY) * Chunk.sizeY,
-                       math.floor(p.z / Chunk.sizeZ) * Chunk.sizeZ)
-
-
-    @staticmethod
-    def computeChunkID(p):
-        """Given an arbitrary point in space, retrieve the ID of the chunk
-        which resides there.
-        """
-        q = Chunk.computeChunkMinP(p)
-        return "%d_%d_%d" % (q.x, q.y, q.z)
+        self.asyncTerrainResult = None
+        self.dirty = True
 
 
     def __repr__(self):
@@ -61,31 +45,38 @@ class Chunk:
         return "<Chunk %s>" % Chunk.computeChunkID(self.minP)
 
 
-	@classmethod
-    def fromProceduralGeneration(cls, minP, maxP, terrainHeight, seed):
+    @classmethod
+    def fromProceduralGeneration(cls, minP, maxP, terrainHeight, seed, pool):
         chunk = Chunk()
-		chunk.minP = minP # extents of the chunk in world-space
-		chunk.maxP = maxP #   "
-		chunk.voxelData = chunk.computeTerrainData(seed, terrainHeight,
-                                                   minP, maxP)
+        chunk.minP = minP # extents of the chunk in world-space
+        chunk.maxP = maxP #   "
         chunk.vbo_verts = GLuint(0)
         chunk.vbo_norms = GLuint(0)
+        chunk.voxelData = None
+        chunk.numTrianglesInBatch = 0
+        chunk.verts = None
+        chunk.norms = None
 
-        # Generate terrain and geometry immediately.
-        # TODO: Generate asynchronously.
-        verts, norms = Chunk.generateGeometry(chunk.voxelData, minP, maxP)
-        chunk.numTrianglesInBatch = len(verts)/3
-        chunk.verts = verts
-        chunk.norms = norms
+        # Spin off a task to generate terrain and geometry.
+        # Chunk will have no terrain or geometry until this has finished.
+        chunk.asyncTerrainResult = \
+            pool.apply_async(procedurallyGenerateTerrain,
+                             [seed, terrainHeight, minP, maxP])
 
         return chunk
 
 
     def update(self, dt):
-        if not self.vbo_verts:
+        if self.asyncTerrainResult and self.asyncTerrainResult.ready():
+            if not self.asyncTerrainResult.successful():
+                raise Exception("Terrain generation failed for " \
+                                "chunk %r" % self.minP)
+            self.voxelData, self.verts, self.norms = \
+                self.asyncTerrainResult.get()
+            assert len(self.verts)%3==0
+            self.numTrianglesInBatch = len(self.verts)/3
+            self.asyncTerrainResult = None
             self.vbo_verts = self.createVertexBufferObject(self.verts)
-
-        if not self.vbo_norms:
             self.vbo_norms = self.createVertexBufferObject(self.norms)
 
 
@@ -108,34 +99,35 @@ class Chunk:
         glDisableClientState(GL_NORMAL_ARRAY)
 
 
-	def destroy(self):
-		"""Destroy the chunk and free all resources consumed by it, including
-		GPU memory for its vertex buffer objects.
-		"""
-		doomed_buffers = [self.vbo_verts, self.vbo_norms]
-		buffers = (GLuint * len(doomed_buffers))(*doomed_buffers)
+    def destroy(self):
+        """Destroy the chunk and free all resources consumed by it, including
+        GPU memory for its vertex buffer objects.
+        """
+        doomed_buffers = [self.vbo_verts, self.vbo_norms]
+        buffers = (GLuint * len(doomed_buffers))(*doomed_buffers)
         glDeleteBuffers(len(buffers), buffers)
 
-		self.vbo_verts = GLuint(0) # 0 is an invalid handle
-		self.vbo_norms = GLuint(0) # 0 is an invalid handle
-		self.voxelData = None
+        self.vbo_verts = GLuint(0) # 0 is an invalid handle
+        self.vbo_norms = GLuint(0) # 0 is an invalid handle
+
+        self.voxelData = None
 
 
 	def saveToDisk(self, fn):
-		onDiskFormat = ["magic", self.voxelData, self.minP, self.maxP]
-		pickle.dump(onDiskFormat, open(fn, "wb"))
+            onDiskFormat = ["magic", self.voxelData, self.minP, self.maxP]
+            pickle.dump(onDiskFormat, open(fn, "wb"))
 
 
-	@classmethod
+    @classmethod
 	def loadFromDisk(cls, fn):
-		onDiskFormat = pickle.load(open(fn, "rb"))
-		if not len(onDiskFormat) == 4:
-			raise Exception("On disk chunk format is totally unrecognized.")
-		if not onDiskFormat[0] == "magic":
-			raise Exception("Chunk uses unsupported format version \"%r\"." % onDiskFormat[0])
-		voxelData = onDiskFormat[1]
-		minP = onDiskFormat[2]
-		maxP = onDiskFormat[3]
+        onDiskFormat = pickle.load(open(fn, "rb"))
+        if not len(onDiskFormat) == 4:
+            raise Exception("On disk chunk format is totally unrecognized.")
+        if not onDiskFormat[0] == "magic":
+            raise Exception("Chunk uses unsupported format version \"%r\"." % onDiskFormat[0])
+        voxelData = onDiskFormat[1]
+        minP = onDiskFormat[2]
+        maxP = onDiskFormat[3]
         verts, norms = TerrainGenerator.generateGeometry(voxelData, minP, maxP)
 
         # Build the chunk from the data we just loaded. 
@@ -149,6 +141,32 @@ class Chunk:
         chunk.vbo_verts = GLuint(0)
         chunk.vbo_norms = GLuint(0)
         return chunk
+
+
+    @staticmethod
+    def computeChunkMinP(p):
+        return Vector3(math.floor(p.x / Chunk.sizeX) * Chunk.sizeX,
+                       math.floor(p.y / Chunk.sizeY) * Chunk.sizeY,
+                       math.floor(p.z / Chunk.sizeZ) * Chunk.sizeZ)
+
+
+    @staticmethod
+    def computeChunkID(p):
+        """Given an arbitrary point in space, retrieve the ID of the chunk
+        which resides there.
+        """
+        q = Chunk.computeChunkMinP(p)
+        return "%d_%d_%d" % (q.x, q.y, q.z)
+
+
+    @staticmethod
+    def createVertexBufferObject(verts):
+        vbo_verts = GLuint()
+        glGenBuffers(1, pointer(vbo_verts))
+        data = (GLfloat * len(verts))(*verts)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
+        glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
+        return vbo_verts
 
 
     @staticmethod
@@ -291,6 +309,7 @@ class ChunkStore:
 
     def __init__(self, seed):
         self.chunks = {}
+        self.pool = multiprocessing.Pool(processes=8)
         self.seed = seed
         self.cameraPos = Vector3(0,0,0)
         self.cameraRot = Quaternion(0,0,0,1)
@@ -306,7 +325,9 @@ class ChunkStore:
             minP = Chunk.computeChunkMinP(p)
             maxP = minP.add(Vector3(Chunk.sizeX, Chunk.sizeY, Chunk.sizeZ))
             chunk =  Chunk.fromProceduralGeneration(minP, maxP,
-                                                    self.RES_Y, self.seed)
+                                                    self.RES_Y,
+                                                    self.seed,
+                                                    self.pool)
             self.chunks[chunkID] = chunk
 
         return chunk
