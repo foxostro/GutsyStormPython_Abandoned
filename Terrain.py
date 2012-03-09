@@ -8,9 +8,11 @@ import pickle
 import numpy
 import time
 import math
+import functools
 import multiprocessing, logging
 from pnoise import PerlinNoise
-from math3D import Vector3, Quaternion
+from math3D import Vector3, Quaternion, Frustum
+import math3D
 
 
 numInFlightChunkTasks = 0
@@ -20,6 +22,35 @@ ERROR = 2
 logger=multiprocessing.log_to_stderr(logging.INFO)
 
 
+class memoized(object):
+   """Decorator that caches a function's return value each time it is called.
+   If called later with the same arguments, the cached value is returned, and
+   not re-evaluated.
+   <http://wiki.python.org/moin/PythonDecoratorLibrary>
+   """
+   def __init__(self, func):
+      self.func = func
+      self.cache = {}
+   def __call__(self, *args):
+      try:
+         return self.cache[args]
+      except KeyError:
+         value = self.func(*args)
+         self.cache[args] = value
+         return value
+      except TypeError:
+         # uncachable -- for instance, passing a list as an argument.
+         # Better to not cache than to blow up entirely.
+         return self.func(*args)
+   def __repr__(self):
+      """Return the function's docstring."""
+      return self.func.__doc__
+   def __get__(self, obj, objtype):
+      """Support instance methods."""
+      return functools.partial(self.__call__, obj)
+
+
+
 def asyncGenerateTerrain(seed, terrainHeight, minP, maxP):
     voxelData = Chunk.computeTerrainData(seed, terrainHeight, minP, maxP)
     verts, norms = Chunk.generateGeometry(voxelData, minP, maxP)
@@ -27,7 +58,7 @@ def asyncGenerateTerrain(seed, terrainHeight, minP, maxP):
 
 
 def asyncLoadTerrain(folder, chunkID):
-    fn = Chunk.computeChunkFileName(folder, chunkID)
+    fn = computeChunkFileName(folder, chunkID)
     if not os.path.exists(fn):
         raise Exception("File does not exist: %s" % fn)
 
@@ -51,13 +82,14 @@ def asyncLoadTerrain(folder, chunkID):
 
 class Chunk:
     "Chunk of terrain and associated geometry."
-    sizeX = 16
-    sizeY = 16
-    sizeZ = 16
+    sizeX = 64
+    sizeY = 64
+    sizeZ = 64
 
     def __init__(self):
         self.minP = Vector3(0,0,0)
         self.maxP = Vector3(0,0,0)
+        self.boxVertices = math3D.getBoxVertices(self.minP, self.maxP)
         self.voxelData = None
         self.numTrianglesInBatch = 0
         self.vbo_verts = GLuint(0)
@@ -67,11 +99,15 @@ class Chunk:
 
 
     def __repr__(self):
-        return "<Chunk %s>" % Chunk.computeChunkID(self.minP)
+        return "<Chunk %s>" % computeChunkID(self.minP)
 
 
     def __str__(self):
-        return "<Chunk %s>" % Chunk.computeChunkID(self.minP)
+        return "<Chunk %s>" % computeChunkID(self.minP)
+
+
+    def isVisible(self, frustum):
+        return frustum.boxInFrustum(self.boxVertices) != Frustum.OUTSIDE
 
 
     @classmethod
@@ -80,6 +116,7 @@ class Chunk:
         chunk = Chunk()
         chunk.minP = minP # extents of the chunk in world-space
         chunk.maxP = maxP #   "
+        chunk.boxVertices = math3D.getBoxVertices(chunk.minP, chunk.maxP)
         chunk.vbo_verts = GLuint(0)
         chunk.vbo_norms = GLuint(0)
         chunk.voxelData = None
@@ -186,11 +223,6 @@ class Chunk:
         self.voxelData = None
 
 
-    @staticmethod
-    def computeChunkFileName(folder, chunkID):
-        return os.path.join(folder, chunkID)
-
-
     def saveToDisk(self, folder, block=False):
         """Saves the chunk if possible. Returns False is the chunk cannot be
         saved for some reason such as terrain generation being in progress at
@@ -208,13 +240,20 @@ class Chunk:
             assert self.minP is not None
             assert self.maxP is not None
 
-            chunkID = Chunk.computeChunkID(self.minP)
+            chunkID = computeChunkID(self.minP)
             logger.info("Saving chunk to disk: %r" % chunkID)
-            fn = Chunk.computeChunkFileName(folder, chunkID)
+            fn = computeChunkFileName(folder, chunkID)
             onDiskFormat = ["magic", self.voxelData, self.minP, self.maxP]
             pickle.dump(onDiskFormat, open(fn, "wb"))
             self.dirty = False
             return True
+
+
+    @staticmethod
+    def computeChunkMinP(p):
+        return Vector3(int(p.x / Chunk.sizeX) * Chunk.sizeX,
+                       int(p.y / Chunk.sizeY) * Chunk.sizeY,
+                       int(p.z / Chunk.sizeZ) * Chunk.sizeZ)
 
 
     @classmethod
@@ -224,6 +263,7 @@ class Chunk:
         chunk = Chunk()
         chunk.minP = minP # extents of the chunk in world-space
         chunk.maxP = maxP #   "
+        chunk.boxVertices = math3D.getBoxVertices(chunk.minP, chunk.maxP)
         chunk.vbo_verts = GLuint(0)
         chunk.vbo_norms = GLuint(0)
         chunk.voxelData = None
@@ -237,30 +277,7 @@ class Chunk:
             pool.apply_async(asyncLoadTerrain, [folder, chunkID])
         numInFlightChunkTasks += 1
 
-        # Chunk will have no terrain or geometry until this has finished.
-        #chunk.voxelData, chunk.verts, chunk.norms = \
-        #    asyncLoadTerrain(folder, chunkID)
-        #assert len(chunk.verts)%3==0
-        #chunk.numTrianglesInBatch = len(chunk.verts)/3
-        #chunk.asyncTerrainResult = None
-
         return chunk
-
-
-    @staticmethod
-    def computeChunkMinP(p):
-        return Vector3(math.floor(p.x / Chunk.sizeX) * Chunk.sizeX,
-                       math.floor(p.y / Chunk.sizeY) * Chunk.sizeY,
-                       math.floor(p.z / Chunk.sizeZ) * Chunk.sizeZ)
-
-
-    @staticmethod
-    def computeChunkID(p):
-        """Given an arbitrary point in space, retrieve the ID of the chunk
-        which resides there.
-        """
-        q = Chunk.computeChunkMinP(p)
-        return "%d_%d_%d" % (q.x, q.y, q.z)
 
 
     @staticmethod
@@ -406,10 +423,29 @@ class Chunk:
         return verts, norms
 
 
+@memoized
+def computeChunkFileName(folder, chunkID):
+    return os.path.join(folder, str(chunkID))
+
+
+@memoized
+def computeChunkIDFromMinP(minP):
+    t = (minP.x, minP.y, minP.z)
+    return hash(t)
+
+
+def computeChunkID(p):
+    """Given an arbitrary point in space, retrieve the ID of the chunk
+    which resides there.
+    """
+    return computeChunkIDFromMinP(Chunk.computeChunkMinP(p))
+
+
 class ChunkStore:
-    RES_X = 128 # These are the dimensions of the active region.
+    RES_X = 256 # These are the dimensions of the active region.
     RES_Y = 64
-    RES_Z = 128
+    RES_Z = 256
+    numActiveChunks = RES_X/Chunk.sizeX * RES_Y/Chunk.sizeY * RES_Z/Chunk.sizeZ
     chunkVBOGenTimeBudget = 10.0 / 60.0
     chunkVBOGenTimeBudgetForPrefetch = 1.0 / 60.0
     chunkSavingTimeBudget = 1.0 / 60.0
@@ -425,6 +461,7 @@ class ChunkStore:
         self.seed = seed
         self.cameraPos = Vector3(0,0,0)
         self.cameraRot = Quaternion(0,0,0,1)
+        self.cameraFrustum = Frustum()
         self.saveFolder = "world"
         os.system("/bin/mkdir -p \'%s\'" % self.saveFolder)
 
@@ -434,7 +471,7 @@ class ChunkStore:
         chunk = None
         maxP = minP.add(Vector3(Chunk.sizeX, Chunk.sizeY, Chunk.sizeZ))
 
-        if os.path.exists(Chunk.computeChunkFileName(self.saveFolder,chunkID)):
+        if os.path.exists(computeChunkFileName(self.saveFolder,chunkID)):
             logger.info("Chunk seems to exist on disk; loading: %r" % chunkID)
             chunk = Chunk.loadFromDisk(self.saveFolder,
                                        chunkID,
@@ -452,7 +489,7 @@ class ChunkStore:
     def getChunk(self, p):
         """Retrieves a chunk of the game world at an arbritrary point in space.
         """
-        chunkID = Chunk.computeChunkID(p)
+        chunkID = computeChunkID(p)
         chunk = None
         try:
             chunk = self.chunks[chunkID]
@@ -469,17 +506,16 @@ class ChunkStore:
         at the specified point in space. Return True if a chunk was actually
         prefetched.
         """
-        chunkID = Chunk.computeChunkID(p)
+        minP = Chunk.computeChunkMinP(p)
+        chunkID = computeChunkIDFromMinP(minP)
         if chunkID in self.chunks:
             return False
-        elif numInFlightChunkTasks < self.prefetchLimitChunksInFlight:
-            logger.info("prefetching chunk " + chunkID)
-            minP = Chunk.computeChunkMinP(p)
-            chunk = self.generateOrLoadChunk(chunkID, minP)
-            self.chunks[chunkID] = chunk
-            return True
-        else:
-            return False
+
+        logger.info("prefetching chunk %r" % chunkID)
+        chunk = self.generateOrLoadChunk(chunkID, minP)
+        self.chunks[chunkID] = chunk
+
+        return True
 
 
     def sync(self):
@@ -507,9 +543,9 @@ class ChunkStore:
         Only generates VBOs for chunks in the visible region.
         """
         startTime = time.time()
-        for chunk in self.getVisibleChunks():
+        for chunk in self.getActiveChunks():
             if chunk.maybeGenerateVBOs():
-                logger.info("Generated VBOs for chunk " + Chunk.computeChunkID(chunk.minP))
+                logger.info("Generated VBOs for chunk %r" % computeChunkID(chunk.minP))
 
             if time.time() - startTime > self.chunkVBOGenTimeBudget:
                 break
@@ -517,7 +553,7 @@ class ChunkStore:
         startTime = time.time()
         for chunk in self.chunks.values():
             if chunk.maybeGenerateVBOs():
-                logger.info("Generated VBOs for chunk " + Chunk.computeChunkID(chunk.minP))
+                logger.info("Generated VBOs for chunk %r" % computeChunkID(chunk.minP))
 
             if time.time() - startTime > self.chunkVBOGenTimeBudgetForPrefetch:
                 break
@@ -531,60 +567,70 @@ class ChunkStore:
         if time.time() - startTime > self.prefetchTimeBudget:
             return
 
-        x = self.cameraPos.x - self.RES_X * self.prefetchRegionSize
-        while x < (self.cameraPos.x + self.RES_X * self.prefetchRegionSize):
-            y = self.cameraPos.y - self.RES_Y * self.prefetchRegionSize
-            while y < (self.cameraPos.y + self.RES_Y * self.prefetchRegionSize):
-                z = self.cameraPos.z - self.RES_Z * self.prefetchRegionSize
-                while z < (self.cameraPos.z + self.RES_Z * self.prefetchRegionSize):
-                    if time.time() - startTime > self.prefetchTimeBudget:
-                        return
+        prefetchTimeBudget = self.prefetchTimeBudget
+        prefetchLimitChunksInFlight = self.prefetchLimitChunksInFlight
+        cx = self.cameraPos.x
+        cy = self.cameraPos.y
+        cz = self.cameraPos.z
+        W = self.RES_X * self.prefetchRegionSize
+        H = self.RES_Y * self.prefetchRegionSize
+        D = self.RES_Z * self.prefetchRegionSize
+        xs = numpy.arange(cx - W, cx + W, Chunk.sizeX)
+        ys = numpy.arange(cy - H, cy + H, Chunk.sizeY)
+        zs = numpy.arange(cz - D, cz + D, Chunk.sizeZ)
 
-                    # May load/generate and cache another chunk, which is the
-                    # whole point.
-                    self.prefetchChunk(Vector3(x, y, z))
+        for x,y,z in itertools.product(xs, ys, zs):
+            if time.time() - startTime > prefetchTimeBudget:
+                return
 
-                    z += Chunk.sizeZ
-                y += Chunk.sizeY
-            x += Chunk.sizeX
+            if numInFlightChunkTasks > prefetchLimitChunksInFlight:
+                return
+
+            self.prefetchChunk(Vector3(x, y, z))
 
 
     def update(self, dt):
         startTime = time.time()
         self.perFramePartialSync()
         self.perFramePartialVBOGeneration()
-        #self.perFrameChunkPrefetch(startTime)
+        self.perFrameChunkPrefetch(startTime)
 
 
     def getActiveChunks(self):
         "Return all chunks near the camera."
-        activeChunks = []
-
-        x = self.cameraPos.x - self.RES_X/2
-        while x < (self.cameraPos.x + self.RES_X/2):
-            y = self.cameraPos.y - self.RES_Y/2
-            while y < (self.cameraPos.y + self.RES_Y/2):
-                z = self.cameraPos.z - self.RES_Z/2
-                while z < (self.cameraPos.z + self.RES_Z/2):
-                    activeChunks.append(self.getChunk(Vector3(x, y, z)))
-                    z += Chunk.sizeZ
-                y += Chunk.sizeY
-            x += Chunk.sizeX
+        activeChunks = [None]*self.numActiveChunks
+        cx = self.cameraPos.x
+        cy = self.cameraPos.y
+        cz = self.cameraPos.z
+        W = self.RES_X/2
+        H = self.RES_Y/2
+        D = self.RES_Z/2
+        xs = numpy.arange(cx - W, cx + W, Chunk.sizeX)
+        ys = numpy.arange(cy - H, cy + H, Chunk.sizeY)
+        zs = numpy.arange(cz - D, cz + D, Chunk.sizeZ)
+        i = 0
+        for x,y,z in itertools.product(xs, ys, zs):
+            chunk = self.getChunk(Vector3(x, y, z))
+            activeChunks[i] = chunk
+            i += 1
 
         return activeChunks
 
 
-    def getVisibleChunks(self):
-        return self.getActiveChunks() # TODO: only return chunks in the camera frustum
+    def drawVisibleChunks(self):
+        "Draw all chunks which are currently visible."
+        for chunk in self.getActiveChunks():
+            if chunk.isVisible(self.cameraFrustum):
+                chunk.draw()
 
 
-    def setCamera(self, p, r):
+    def setCamera(self, p, r, fr):
         self.cameraPos = p
         self.cameraRot = r
+        self.cameraFrustum = fr
 
 
 if __name__ == "__main__":
     chunkStore = ChunkStore(0)
-    assert Chunk.computeChunkID(Vector3(0.0, 0.0, 0.0)) == "0_0_0"
     print chunkStore.getChunk(Vector3(0.0, 0.0, 0.0))
     print chunkStore.getActiveChunks()

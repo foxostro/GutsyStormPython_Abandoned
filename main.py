@@ -15,18 +15,35 @@ from collections import defaultdict
 
 from Shader import Shader
 import Terrain
-from math3D import Quaternion, Vector3
+from math3D import Quaternion, Vector3, Frustum
 
 
 useWireframe = False
 shader = None
 fps_display = None
 chunkStore = None
+seed = 1330765820.45
 keysDown = defaultdict(bool)
 cameraPos = Vector3(92.317, 33.122, 122.606)
 cameraRot = Quaternion.fromAxisAngle(Vector3(0,1,0), 0)
-cameraSpeed = 10.0
+cameraSpeed = 5.0
 cameraRotSpeed = 1.0
+cameraFrustum = Frustum()
+
+
+def getCameraEyeCenterUp(cameraPos, cameraRot):
+    p = cameraPos
+    l = cameraPos.add(cameraRot.mulByVec(Vector3(0,0,-1)))
+    u = cameraPos.add(cameraRot.mulByVec(Vector3(0,1,0)))
+    return p,l,u
+
+
+def updateCameraFrustum():
+    global cameraFrustum
+    # Update the camera frustum
+    p,l,u = getCameraEyeCenterUp(cameraPos, cameraRot)
+    cameraFrustum.setCamDef(p, l, u)
+    del p,l,u
 
 
 def arrayOfGLfloat(*args):
@@ -134,13 +151,16 @@ def main():
     global shader
     global fps_display
     global chunkStore
+    global seed
 
     setupGLState()
     shader = createShaderObject()
-    fps_display = pyglet.clock.ClockDisplay()
+    fps_display = pyglet.clock.ClockDisplay(format='%(fps).0f FPS')
 
-    seed = 1330765820.45 # time.time()
+    updateCameraFrustum()
+    #seed = time.time()
     chunkStore = Terrain.ChunkStore(seed)
+    chunkStore.setCamera(cameraPos, cameraRot, cameraFrustum)
 
     pyglet.app.run()
 
@@ -148,35 +168,48 @@ def main():
 def update(dt):
     global cameraPos, cameraRot
 
+    wasCameraModified = False
+
     if keysDown[key.W]:
         acceleration = cameraRot.mulByVec(Vector3(0, 0, -cameraSpeed*dt))
         cameraPos = cameraPos.add(acceleration)
+        wasCameraModified = True
     elif keysDown[key.S]:
         acceleration = cameraRot.mulByVec(Vector3(0, 0, cameraSpeed*dt))
         cameraPos = cameraPos.add(acceleration)
+        wasCameraModified = True
 
     if keysDown[key.A]:
         acceleration = cameraRot.mulByVec(Vector3(-cameraSpeed*dt, 0, 0))
         cameraPos = cameraPos.add(acceleration)
+        wasCameraModified = True
     elif keysDown[key.D]:
         acceleration = cameraRot.mulByVec(Vector3(cameraSpeed*dt, 0, 0))
         cameraPos = cameraPos.add(acceleration)
+        wasCameraModified = True
 
     if keysDown[key.LEFT]:
         deltaRot = cameraRot.fromAxisAngle(Vector3(0,1,0), cameraRotSpeed*dt)
         cameraRot = cameraRot.mulByQuat(deltaRot)
+        wasCameraModified = True
     elif keysDown[key.RIGHT]:
         deltaRot = cameraRot.fromAxisAngle(Vector3(0,1,0), -cameraRotSpeed*dt)
         cameraRot = cameraRot.mulByQuat(deltaRot)
+        wasCameraModified = True
 
     if keysDown[key.UP]:
         deltaRot = cameraRot.fromAxisAngle(Vector3(1,0,0), -cameraRotSpeed*dt)
         cameraRot = cameraRot.mulByQuat(deltaRot)
+        wasCameraModified = True
     elif keysDown[key.DOWN]:
         deltaRot = cameraRot.fromAxisAngle(Vector3(1,0,0), cameraRotSpeed*dt)
         cameraRot = cameraRot.mulByQuat(deltaRot)
+        wasCameraModified = True
 
-    chunkStore.setCamera(cameraPos, cameraRot)
+    if wasCameraModified:
+        updateCameraFrustum()
+        chunkStore.setCamera(cameraPos, cameraRot, cameraFrustum)
+
     chunkStore.update(dt)
 
 pyglet.clock.schedule(update)
@@ -211,10 +244,12 @@ def on_key_release(symbol, modifiers):
 
 @window.event
 def on_resize(width, height):
+    global cameraFrustum
     glViewport(0, 0, width, height)
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     gluPerspective(65, width / float(height), .1, 1000)
+    cameraFrustum.setCamInternals(65, width / float(height), .1, 1000)
     glMatrixMode(GL_MODELVIEW)
     return pyglet.event.EVENT_HANDLED
 
@@ -235,15 +270,15 @@ def on_draw():
 
     glPushMatrix()
 
-    # Apply camera transformation.
-    axis, angle = cameraRot.toAxisAngle()
-    glRotatef(angle * 180.0/math.pi, -axis.x, -axis.y, -axis.z)
-    del axis, angle
-    glTranslatef(-cameraPos.x, -cameraPos.y, -cameraPos.z)
+    # Set the camera.
+    p, l, u = getCameraEyeCenterUp(cameraPos, cameraRot)
+    gluLookAt(p.x, p.y, p.z,
+              l.x, l.y, l.z,
+              u.x, u.y, u.z)
+    del p, l, u
 
     shader.bind()
-    for chunk in chunkStore.getVisibleChunks():
-        chunk.draw()
+    chunkStore.drawVisibleChunks()
     shader.unbind()
     glPopMatrix()
 
