@@ -95,9 +95,9 @@ def saveChunkToDiskWorker(folder, voxelData, minP, maxP):
 
 class Chunk:
     "Chunk of terrain and associated geometry."
-    sizeX = 64
+    sizeX = 32
     sizeY = 64
-    sizeZ = 64
+    sizeZ = 32
 
     def __init__(self):
         self.minP = Vector3(0,0,0)
