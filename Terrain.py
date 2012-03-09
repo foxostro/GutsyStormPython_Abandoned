@@ -143,9 +143,9 @@ class Chunk:
         # We may want to block and wait for results now.
         if block and not self.asyncTerrainResult.ready():
             logger.info("blocking to wait for terrain data")
-            self.asyncTerrainResult.wait(30)
+            self.asyncTerrainResult.wait(60)
             if not self.asyncTerrainResult.ready():
-                raise Exception("Blocked for 30s waiting for terrain data " \
+                raise Exception("Blocked for 60s waiting for terrain data " \
                                 "and never got it. It's probably not coming." \
                                 " Bailing out.")
 
@@ -462,11 +462,13 @@ class ChunkStore:
         self.cameraPos = Vector3(0,0,0)
         self.cameraRot = Quaternion(0,0,0,1)
         self.cameraFrustum = Frustum()
+        self.activeChunks = [None] * ChunkStore.numActiveChunks
+        self.visibleChunks = []
         self.saveFolder = "world"
         os.system("/bin/mkdir -p \'%s\'" % self.saveFolder)
 
 
-    def generateOrLoadChunk(self, chunkID, minP):
+    def _generateOrLoadChunk(self, chunkID, minP):
         "Load the chunk from disk or generate it here and now."
         chunk = None
         maxP = minP.add(Vector3(Chunk.sizeX, Chunk.sizeY, Chunk.sizeZ))
@@ -483,6 +485,7 @@ class ChunkStore:
                                                     self.RES_Y,
                                                     self.seed,
                                                     self.pool)
+
         return chunk
 
 
@@ -495,7 +498,7 @@ class ChunkStore:
             chunk = self.chunks[chunkID]
         except KeyError:
             minP = Chunk.computeChunkMinP(p)
-            chunk = self.generateOrLoadChunk(chunkID, minP)
+            chunk = self._generateOrLoadChunk(chunkID, minP)
             self.chunks[chunkID] = chunk
 
         return chunk
@@ -512,7 +515,7 @@ class ChunkStore:
             return False
 
         logger.info("prefetching chunk %r" % chunkID)
-        chunk = self.generateOrLoadChunk(chunkID, minP)
+        chunk = self._generateOrLoadChunk(chunkID, minP)
         self.chunks[chunkID] = chunk
 
         return True
@@ -521,11 +524,15 @@ class ChunkStore:
     def sync(self):
         "Ensure all chunks are saved to disk."
         for chunk in self.chunks.values():
-            chunk.saveToDisk(self.saveFolder)
-        logger.info("sync'd chunks to disk")
+            chunk.saveToDisk(self.saveFolder, True)
+
+        if len(filter(lambda chunk: chunk.dirty, self.chunks.values())) > 0:
+            logger.error("Tried sync, but some dirty chunks remain.")
+        else:
+            logger.info("Successfully sync'd chunks to disk.")
 
 
-    def perFramePartialSync(self):
+    def _incrementalSync(self):
         """Save a few dirty chunks every frame to keep the game interactive.
         May save any dirty chunk which is currently loaded into memory.
         """
@@ -538,12 +545,12 @@ class ChunkStore:
                 break
 
 
-    def perFramePartialVBOGeneration(self):
+    def _incrementalVBOGeneration(self):
         """Generate a few VBOs per frame to keep the game interactive.
         Only generates VBOs for chunks in the visible region.
         """
         startTime = time.time()
-        for chunk in self.getActiveChunks():
+        for chunk in self.activeChunks:
             if chunk.maybeGenerateVBOs():
                 logger.info("Generated VBOs for chunk %r" % computeChunkID(chunk.minP))
 
@@ -559,7 +566,7 @@ class ChunkStore:
                 break
 
 
-    def perFrameChunkPrefetch(self, startTime):
+    def _incrementalPrefetch(self, startTime):
         """Take some time to opportunistically generate/load chunks outside the
         active region in case we want them later. This will stop when the time
         since startTime exceeds prefetchTimeBudget.
@@ -591,14 +598,17 @@ class ChunkStore:
 
     def update(self, dt):
         startTime = time.time()
-        self.perFramePartialSync()
-        self.perFramePartialVBOGeneration()
-        self.perFrameChunkPrefetch(startTime)
+        self._incrementalSync()
+        self._incrementalVBOGeneration()
+        self._incrementalPrefetch(startTime)
 
 
-    def getActiveChunks(self):
-        "Return all chunks near the camera."
-        activeChunks = [None]*self.numActiveChunks
+    def _updateInternalActiveAndVisibleChunksCache(self):
+        """Update the internal cache of active chunks. Call when the camera
+        changes to update internal book keeping about which chunks are active.
+        """
+        activeChunks = self.activeChunks
+        visibleChunks = []
         cx = self.cameraPos.x
         cy = self.cameraPos.y
         cz = self.cameraPos.z
@@ -612,25 +622,48 @@ class ChunkStore:
         for x,y,z in itertools.product(xs, ys, zs):
             chunk = self.getChunk(Vector3(x, y, z))
             activeChunks[i] = chunk
+
+            if chunk.isVisible(self.cameraFrustum):
+                visibleChunks.append(chunk)
+
             i += 1
 
-        return activeChunks
+        self.visibleChunks = visibleChunks
 
 
     def drawVisibleChunks(self):
         "Draw all chunks which are currently visible."
-        for chunk in self.getActiveChunks():
-            if chunk.isVisible(self.cameraFrustum):
-                chunk.draw()
+        map(Chunk.draw, self.visibleChunks)
 
 
     def setCamera(self, p, r, fr):
         self.cameraPos = p
         self.cameraRot = r
         self.cameraFrustum = fr
+        self._updateInternalActiveAndVisibleChunksCache()
 
 
 if __name__ == "__main__":
+    cameraPos = Vector3(0,0,0)
+    cameraRot = Quaternion.fromAxisAngle(Vector3(0,1,0), 0)
+    cameraSpeed = 5.0
+    cameraRotSpeed = 1.0
+    cameraFrustum = Frustum()
+    cameraEye = Vector3(0,0,0)
+    cameraCenter = Vector3(0,0,0)
+    cameraUp = Vector3(0,0,0)
+
+    cameraEye, cameraCenter, cameraUp = \
+        math3D.getCameraEyeCenterUp(cameraPos, cameraRot)
+    cameraFrustum.setCamInternals(65, 640.0/480.0, .1, 1000)
+    cameraFrustum.setCamDef(cameraEye, cameraCenter, cameraUp)
+
     chunkStore = ChunkStore(0)
-    print chunkStore.getChunk(Vector3(0.0, 0.0, 0.0))
-    print chunkStore.getActiveChunks()
+    chunkStore.setCamera(cameraPos, cameraRot, cameraFrustum)
+
+    print "A chunk at the origin:", chunkStore.getChunk(cameraPos)
+    chunkStore.prefetchChunk(Vector3(0.0, 0.0, 0.0))
+    print "Active Chunks:", chunkStore.activeChunks
+    print "Visible Chunks:", chunkStore.visibleChunks
+
+    #chunkStore.sync() # May take a while.

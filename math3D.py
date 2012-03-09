@@ -8,6 +8,13 @@ import math
 eps = 1e-8
 
 
+def getCameraEyeCenterUp(cameraPos, cameraRot):
+    p = cameraPos
+    l = cameraPos.add(cameraRot.mulByVec(Vector3(0, 0,-1)).normalize())
+    u = cameraRot.mulByVec(Vector3(0,+1, 0)).normalize()
+    return p,l,u
+
+
 def getBoxVertices(minP, maxP):
     p = [None]*8
     W = maxP.x - minP.x

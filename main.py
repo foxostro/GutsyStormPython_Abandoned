@@ -16,6 +16,7 @@ from collections import defaultdict
 from Shader import Shader
 import Terrain
 from math3D import Quaternion, Vector3, Frustum
+import math3D
 
 
 useWireframe = False
@@ -34,18 +35,11 @@ cameraCenter = Vector3(0,0,0)
 cameraUp = Vector3(0,0,0)
 
 
-def getCameraEyeCenterUp(cameraPos, cameraRot):
-    p = cameraPos
-    l = cameraPos.add(cameraRot.mulByVec(Vector3(0, 0,-1)).normalize())
-    u = cameraRot.mulByVec(Vector3(0,+1, 0)).normalize()
-    return p,l,u
-
-
 def updateCameraFrustum():
     "Update the cached camera frustum and look vectors"
     global cameraFrustum, cameraEye, cameraCenter, cameraUp
     cameraEye, cameraCenter, cameraUp = \
-        getCameraEyeCenterUp(cameraPos, cameraRot)
+        math3D.getCameraEyeCenterUp(cameraPos, cameraRot)
     cameraFrustum.setCamDef(cameraEye, cameraCenter, cameraUp)
 
 
@@ -305,4 +299,5 @@ def on_draw():
     glMatrixMode(GL_MODELVIEW)
 
 
-main()
+if __name__ == "__main__":
+    main()
