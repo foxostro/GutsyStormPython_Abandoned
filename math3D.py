@@ -359,6 +359,13 @@ if __name__ == "__main__":
     assert r3.mulByVec(Vector3(0,0,2)) == Vector3(0,2,0)
     assert r4.mulByVec(Vector3(0,0,2)) == Vector3(0,math.sqrt(2),math.sqrt(2))
 
+    # Rotate by 90 degrees about the y axis and make sure the up vector
+    # is still straight up.
+    a = r1.mulByQuat(r2)
+    u = a.mulByVec(Vector3(0,1,0))
+    assert u == Vector3(0,1,0)
+    del a, u
+
     frustum = Frustum()
     frustum.setCamInternals(65, 640.0/480.0, .1, 1000)
     frustum.setCamDef(Vector3(0,0,0),

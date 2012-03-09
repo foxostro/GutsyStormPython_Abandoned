@@ -29,21 +29,24 @@ cameraRot = Quaternion.fromAxisAngle(Vector3(0,1,0), 0)
 cameraSpeed = 5.0
 cameraRotSpeed = 1.0
 cameraFrustum = Frustum()
+cameraEye = Vector3(0,0,0)
+cameraCenter = Vector3(0,0,0)
+cameraUp = Vector3(0,0,0)
 
 
 def getCameraEyeCenterUp(cameraPos, cameraRot):
     p = cameraPos
-    l = cameraPos.add(cameraRot.mulByVec(Vector3(0,0,-1)))
-    u = cameraPos.add(cameraRot.mulByVec(Vector3(0,1,0)))
+    l = cameraPos.add(cameraRot.mulByVec(Vector3(0, 0,-1)).normalize())
+    u = cameraRot.mulByVec(Vector3(0,+1, 0)).normalize()
     return p,l,u
 
 
 def updateCameraFrustum():
-    global cameraFrustum
-    # Update the camera frustum
-    p,l,u = getCameraEyeCenterUp(cameraPos, cameraRot)
-    cameraFrustum.setCamDef(p, l, u)
-    del p,l,u
+    "Update the cached camera frustum and look vectors"
+    global cameraFrustum, cameraEye, cameraCenter, cameraUp
+    cameraEye, cameraCenter, cameraUp = \
+        getCameraEyeCenterUp(cameraPos, cameraRot)
+    cameraFrustum.setCamDef(cameraEye, cameraCenter, cameraUp)
 
 
 def arrayOfGLfloat(*args):
@@ -271,11 +274,9 @@ def on_draw():
     glPushMatrix()
 
     # Set the camera.
-    p, l, u = getCameraEyeCenterUp(cameraPos, cameraRot)
-    gluLookAt(p.x, p.y, p.z,
-              l.x, l.y, l.z,
-              u.x, u.y, u.z)
-    del p, l, u
+    gluLookAt(cameraEye.x,    cameraEye.y,    cameraEye.z,
+              cameraCenter.x, cameraCenter.y, cameraCenter.z,
+              cameraUp.x,     cameraUp.y,     cameraUp.z)
 
     shader.bind()
     chunkStore.drawVisibleChunks()
