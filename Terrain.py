@@ -478,7 +478,7 @@ class ChunkStore:
     numActiveChunks = RES_X/Chunk.sizeX * RES_Y/Chunk.sizeY * RES_Z/Chunk.sizeZ
     chunkVBOGenTimeBudget = 1.0 / 60.0
     prefetchTimeBudget = 1.0 / 60.0
-    prefetchLimitChunksInFlight = 2
+    prefetchLimitChunksInFlight = 4
     prefetchRegionSize = 2
 
 
