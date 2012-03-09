@@ -51,6 +51,11 @@ class memoized(object):
 
 
 
+def decrNumInFlightChunkTasks(r):
+    global numInFlightChunkTasks
+    numInFlightChunkTasks -= 1
+
+
 def asyncGenerateTerrain(seed, terrainHeight, minP, maxP):
     voxelData = Chunk.computeTerrainData(seed, terrainHeight, minP, maxP)
     verts, norms = Chunk.generateGeometry(voxelData, minP, maxP)
@@ -180,12 +185,10 @@ class Chunk:
         if not self.asyncTerrainResult.successful():
             logger.error("Terrain generation failed for chunk %r" % self.minP)
             self.asyncTerrainResult = None
-            numInFlightChunkTasks -= 1
             return ERROR
 
         self.voxelData, self.verts, self.norms = self.asyncTerrainResult.get()
         self.asyncTerrainResult = None
-        numInFlightChunkTasks -= 1
 
         assert self.voxelData is not None
         assert self.verts is not None
@@ -303,9 +306,9 @@ class Chunk:
         chunk.folder = folder
 
         # Spin off a task to load the terrain.
-        chunk.asyncTerrainResult = \
-            pool.apply_async(asyncLoadTerrain, [folder, chunkID])
         numInFlightChunkTasks += 1
+        chunk.asyncTerrainResult = pool.apply_async(asyncLoadTerrain,
+            [folder, chunkID], callback=decrNumInFlightChunkTasks)
 
         return chunk
 
@@ -475,11 +478,29 @@ class ChunkStore:
     activeRegionSizeX = 256 # These are the dimensions of the active region.
     activeRegionSizeY = 64
     activeRegionSizeZ = 256
+
+    # The number of chunks which will be in the active region.
     numActiveChunks = activeRegionSizeX/Chunk.sizeX * activeRegionSizeY/Chunk.sizeY * activeRegionSizeZ/Chunk.sizeZ
+
+    # The time per frame to devote to opportunistic VBO generation.
     chunkVBOGenTimeBudget = 1.0 / 60.0
-    prefetchTimeBudget = 1.0 / 60.0
+
+    # The time per frame to devote to chunk prefetching.
+    prefetchTimeBudget = 0.5 / 60.0
+
+    # The max number of chunks which may be in flight when prefetching.
     prefetchLimitChunksInFlight = 4
-    prefetchRegionSize = 2
+
+    # Prefetch chunks in a region this much larger than the active region.
+    prefetchRegionSize = 64
+
+    # Max number of prefetch+active chunks if prefetching is allowed to finish.
+    numPrefetchChunks = (activeRegionSizeX+prefetchRegionSize)/Chunk.sizeX * \
+                        activeRegionSizeY/Chunk.sizeY * \
+                        (activeRegionSizeZ+prefetchRegionSize)/Chunk.sizeZ
+
+    # The maximum number of chunks to keep in the cache at once.
+    cacheSizeLimit = max(256,numPrefetchChunks) # TODO: What size is best?
 
 
     def __init__(self, seed):
@@ -494,6 +515,39 @@ class ChunkStore:
         self.visibleChunks = []
         self.saveFolder = "world_%s" % str(seed)
         os.system("/bin/mkdir -p \'%s\'" % self.saveFolder)
+
+
+    def _evictChunk(self, chunkID):
+        "Evict a chunk from the cache."
+        if chunkID not in self.chunks:
+            raise Exception("Chunk is not in the cache.")
+
+        logger.info("evicting chunk from cache: %r" % chunkID)
+
+        # Sync chunks in case we evict a dirty chunk or a chunk with tasks
+        # in flight. Must do this synchronously.
+        self.chunks[chunkID].saveToDisk(self.saveFolder, True)
+
+        # Deallocate VBOs. (VRAM)
+        self.chunks[chunkID].destroy()
+
+        del self.chunks[chunkID]
+
+
+    def _performEvictionIfNecessary(self):
+        "If the cache is full, evict a chunk (not an active chunk)"
+        if len(self.chunks) < ChunkStore.cacheSizeLimit:
+            return
+
+        logger.warn("Cache is full. Evicting a chunk.")
+        for chunk in self.chunks.values():
+            if chunk not in self.activeChunks:
+                toEvictID = computeChunkIDFromMinP(chunk.minP)
+                self._evictChunk(toEvictID)
+                logger.info("Evicted a chunk. Cache now contains " \
+                        "%d/%d chunks" % \
+                        (len(self.chunks), self.cacheSizeLimit))
+                assert len(self.chunks) < self.cacheSizeLimit
 
 
     def _generateOrLoadChunk(self, chunkID, minP):
@@ -526,9 +580,12 @@ class ChunkStore:
         try:
             chunk = self.chunks[chunkID]
         except KeyError:
+            self._performEvictionIfNecessary()
             minP = Chunk.computeChunkMinP(p)
             chunk = self._generateOrLoadChunk(chunkID, minP)
             self.chunks[chunkID] = chunk
+            logger.info("Fetched a chunk. Cache now contains %d/%d chunks" % \
+                        (len(self.chunks), self.cacheSizeLimit))
 
         return chunk
 
@@ -543,18 +600,22 @@ class ChunkStore:
         if chunkID in self.chunks:
             return False
 
-        logger.info("prefetching chunk %r" % chunkID)
-        chunk = self._generateOrLoadChunk(chunkID, minP)
-        self.chunks[chunkID] = chunk
+        if len(self.chunks) < ChunkStore.cacheSizeLimit:
+            chunk = self._generateOrLoadChunk(chunkID, minP)
+            self.chunks[chunkID] = chunk
+            logger.info("Prefetched a chunk. Cache now contains " \
+                        "%d/%d chunks" % \
+                        (len(self.chunks), self.cacheSizeLimit))
+            return True
+        else:
+            return False # would cause cache to be more than max size
 
-        return True
 
-
-    def sync(self):
+    def sync(self, bl=False):
         "Ensure dirty chunks are saved to disk."
-        # Don't block. If a chunk hasn't generated data yet then we'll
-        # regenerate the chunk in the next session. Nothing is lost.
-        map(lambda c: c.saveToDisk(self.saveFolder), self.chunks.values())
+        # By default, don't block. If a chunk hasn't generated data yet then
+        # we'll regenerate the chunk in the next session. Nothing is lost.
+        map(lambda c: c.saveToDisk(self.saveFolder, bl), self.chunks.values())
         logger.info("sync'd chunks to disk.")
 
 
@@ -566,37 +627,31 @@ class ChunkStore:
 
         # Generate VBOs for any visible chunks which have geometry.
         # Since these are on screen, we need the VBO now.
-        for chunk in self.visibleChunks:
-            if chunk.maybeGenerateVBOs():
-                logger.info("Generated VBOs for chunk %r" % computeChunkID(chunk.minP))
+        map(Chunk.maybeGenerateVBOs, self.visibleChunks)
 
         # Opportunistically generate VBOs for active chunks until deadline.
         if time.time() - startTime > self.chunkVBOGenTimeBudget:
             return
         for chunk in self.activeChunks:
-            if chunk.maybeGenerateVBOs():
-                logger.info("Generated VBOs for chunk %r" % computeChunkID(chunk.minP))
-
+            chunk.maybeGenerateVBOs()
             if time.time() - startTime > self.chunkVBOGenTimeBudget:
-                break
+                return
 
 
-    def _incrementalPrefetch(self, startTime):
+    def _incrementalPrefetch(self):
         """Take some time to opportunistically generate/load chunks outside the
-        active region in case we want them later. This will stop when the time
-        since startTime exceeds prefetchTimeBudget.
+        active region in case we want them later.
         """
-        if time.time() - startTime > self.prefetchTimeBudget:
-            return
+        startTime = time.time()
 
         prefetchTimeBudget = self.prefetchTimeBudget
         prefetchLimitChunksInFlight = self.prefetchLimitChunksInFlight
         cx = self.cameraPos.x
         cy = self.cameraPos.y
         cz = self.cameraPos.z
-        W = self.activeRegionSizeX * self.prefetchRegionSize
-        H = self.activeRegionSizeY * self.prefetchRegionSize
-        D = self.activeRegionSizeZ * self.prefetchRegionSize
+        W = self.activeRegionSizeX + self.prefetchRegionSize
+        H = self.activeRegionSizeY
+        D = self.activeRegionSizeZ + self.prefetchRegionSize
         xs = numpy.arange(cx - W, cx + W, Chunk.sizeX)
         ys = numpy.arange(cy - H, cy + H, Chunk.sizeY)
         zs = numpy.arange(cz - D, cz + D, Chunk.sizeZ)
@@ -612,9 +667,8 @@ class ChunkStore:
 
 
     def update(self, dt):
-        startTime = time.time()
         self._incrementalVBOGeneration()
-        self._incrementalPrefetch(startTime)
+        self._incrementalPrefetch()
 
 
     def _updateInternalActiveAndVisibleChunksCache(self):
@@ -641,6 +695,8 @@ class ChunkStore:
                 visibleChunks.append(chunk)
 
             i += 1
+            if i >= len(activeChunks):
+                break
 
         self.visibleChunks = visibleChunks
 
