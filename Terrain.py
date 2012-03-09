@@ -476,8 +476,7 @@ class ChunkStore:
     RES_Y = 64
     RES_Z = 256
     numActiveChunks = RES_X/Chunk.sizeX * RES_Y/Chunk.sizeY * RES_Z/Chunk.sizeZ
-    chunkVBOGenTimeBudget = 10.0 / 60.0
-    chunkVBOGenTimeBudgetForPrefetch = 1.0 / 60.0
+    chunkVBOGenTimeBudget = 1.0 / 60.0
     prefetchTimeBudget = 1.0 / 60.0
     prefetchLimitChunksInFlight = 2
     prefetchRegionSize = 2
@@ -564,19 +563,21 @@ class ChunkStore:
         Only generates VBOs for chunks in the visible region.
         """
         startTime = time.time()
+
+        # Generate VBOs for any visible chunks which have geometry.
+        # Since these are on screen, we need the VBO now.
+        for chunk in self.visibleChunks:
+            if chunk.maybeGenerateVBOs():
+                logger.info("Generated VBOs for chunk %r" % computeChunkID(chunk.minP))
+
+        # Opportunistically generate VBOs for active chunks until deadline.
+        if time.time() - startTime > self.chunkVBOGenTimeBudget:
+            return
         for chunk in self.activeChunks:
             if chunk.maybeGenerateVBOs():
                 logger.info("Generated VBOs for chunk %r" % computeChunkID(chunk.minP))
 
             if time.time() - startTime > self.chunkVBOGenTimeBudget:
-                break
-
-        startTime = time.time()
-        for chunk in self.chunks.values():
-            if chunk.maybeGenerateVBOs():
-                logger.info("Generated VBOs for chunk %r" % computeChunkID(chunk.minP))
-
-            if time.time() - startTime > self.chunkVBOGenTimeBudgetForPrefetch:
                 break
 
 
