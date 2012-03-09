@@ -62,7 +62,7 @@ def asyncLoadTerrain(folder, chunkID):
     if not os.path.exists(fn):
         raise Exception("File does not exist: %s" % fn)
 
-    logger.info("Loading chunk from disk: %r" % chunkID)
+    logger.info("Loading chunk from disk: %s" % fn)
     onDiskFormat = pickle.load(open(fn, "rb"))
 
     if not len(onDiskFormat) == 4:
@@ -80,6 +80,19 @@ def asyncLoadTerrain(folder, chunkID):
     return voxelData, verts, norms
 
 
+def saveChunkToDiskWorker(folder, voxelData, minP, maxP):
+    assert voxelData is not None
+    assert minP is not None
+    assert maxP is not None
+
+    fn = computeChunkFileName(folder, computeChunkIDFromMinP(minP))
+    logger.info("Saving chunk to disk: %s" % fn)
+    onDiskFormat = ["magic", voxelData, minP, maxP]
+    pickle.dump(onDiskFormat, open(fn, "wb"))
+
+    return True
+
+
 class Chunk:
     "Chunk of terrain and associated geometry."
     sizeX = 64
@@ -95,6 +108,7 @@ class Chunk:
         self.vbo_verts = GLuint(0)
         self.vbo_norms = GLuint(0)
         self.asyncTerrainResult = None
+        self.pool = None
         self.dirty = True
 
 
@@ -111,7 +125,8 @@ class Chunk:
 
 
     @classmethod
-    def fromProceduralGeneration(cls, minP, maxP, terrainHeight, seed, pool):
+    def fromProceduralGeneration(cls, minP, maxP, terrainHeight, seed,
+                                 pool, folder):
         global numInFlightChunkTasks
         chunk = Chunk()
         chunk.minP = minP # extents of the chunk in world-space
@@ -123,6 +138,8 @@ class Chunk:
         chunk.numTrianglesInBatch = 0
         chunk.verts = None
         chunk.norms = None
+        chunk.pool = pool
+        chunk.folder = folder
 
         # Spin off a task to generate terrain and geometry.
         # Chunk will have no terrain or geometry until this has finished.
@@ -132,6 +149,13 @@ class Chunk:
         numInFlightChunkTasks += 1
 
         return chunk
+
+
+    def setNotDirty(self):
+        """Called by the async save operation when complete to mark the chunk
+        as not being dirty.
+        """
+        self.dirty = False
 
 
     def updateTerrainFromAsyncGenResults(self, block=False):
@@ -169,6 +193,14 @@ class Chunk:
 
         assert len(self.verts)%3==0
         self.numTrianglesInBatch = len(self.verts)/3
+
+        # Chunk is now dirty as it has never been saved. Spin off a task
+        # to save it asynchronously.
+        # TODO: Will need locking when chunks become modifiable.
+        self.pool.apply_async(saveChunkToDiskWorker,
+                              [self.folder, self.voxelData,
+                               self.minP, self.maxP],
+                              callback = lambda r: self.setNotDirty())
 
         return NOW_AVAILABLE
 
@@ -226,7 +258,7 @@ class Chunk:
     def saveToDisk(self, folder, block=False):
         """Saves the chunk if possible. Returns False is the chunk cannot be
         saved for some reason such as terrain generation being in progress at
-        the moment.
+        the moment. Always saves the chunk synchronously.
         block - If True then wait for terrain generation to complete and
                 save the terrain to disk. May take longer.
         """
@@ -238,15 +270,8 @@ class Chunk:
         if self.updateTerrainFromAsyncGenResults(block) != NOW_AVAILABLE:
             return False
 
-        assert self.voxelData is not None
-        assert self.minP is not None
-        assert self.maxP is not None
-
-        chunkID = computeChunkID(self.minP)
-        logger.info("Saving chunk to disk: %r" % chunkID)
-        fn = computeChunkFileName(folder, chunkID)
-        onDiskFormat = ["magic", self.voxelData, self.minP, self.maxP]
-        pickle.dump(onDiskFormat, open(fn, "wb"))
+        saveChunkToDiskWorker(self.folder, self.voxelData,
+                              self.minP, self.maxP)
         self.dirty = False
 
         return True
@@ -274,6 +299,8 @@ class Chunk:
         chunk.verts = None
         chunk.norms = None
         chunk.dirty = False
+        chunk.pool = pool
+        chunk.folder = folder
 
         # Spin off a task to load the terrain.
         chunk.asyncTerrainResult = \
@@ -451,7 +478,6 @@ class ChunkStore:
     numActiveChunks = RES_X/Chunk.sizeX * RES_Y/Chunk.sizeY * RES_Z/Chunk.sizeZ
     chunkVBOGenTimeBudget = 10.0 / 60.0
     chunkVBOGenTimeBudgetForPrefetch = 1.0 / 60.0
-    chunkSavingTimeBudget = 1.0 / 60.0
     prefetchTimeBudget = 1.0 / 60.0
     prefetchLimitChunksInFlight = 2
     prefetchRegionSize = 2
@@ -487,7 +513,8 @@ class ChunkStore:
             chunk =  Chunk.fromProceduralGeneration(minP, maxP,
                                                     self.RES_Y,
                                                     self.seed,
-                                                    self.pool)
+                                                    self.pool,
+                                                    self.saveFolder)
 
         return chunk
 
@@ -530,19 +557,6 @@ class ChunkStore:
         # regenerate the chunk in the next session. Nothing is lost.
         map(lambda c: c.saveToDisk(self.saveFolder), self.chunks.values())
         logger.info("sync'd chunks to disk.")
-
-
-    def _incrementalSync(self):
-        """Save a few dirty chunks every frame to keep the game interactive.
-        May save any dirty chunk which is currently loaded into memory.
-        """
-        startTime = time.time()
-        for chunk in self.chunks.values():
-            if chunk.dirty:
-                chunk.saveToDisk(self.saveFolder)
-
-            if time.time() - startTime > self.chunkSavingTimeBudget:
-                break
 
 
     def _incrementalVBOGeneration(self):
@@ -598,7 +612,6 @@ class ChunkStore:
 
     def update(self, dt):
         startTime = time.time()
-        self._incrementalSync()
         self._incrementalVBOGeneration()
         self._incrementalPrefetch(startTime)
 
