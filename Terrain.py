@@ -230,23 +230,26 @@ class Chunk:
         block - If True then wait for terrain generation to complete and
                 save the terrain to disk. May take longer.
         """
+        if not self.dirty:
+            return True # nothing to do
+
         # First, make sure we can save right now. Maybe block to wait for
         # terrain results to come back.
         if self.updateTerrainFromAsyncGenResults(block) != NOW_AVAILABLE:
             return False
 
-        if self.dirty:
-            assert self.voxelData is not None
-            assert self.minP is not None
-            assert self.maxP is not None
+        assert self.voxelData is not None
+        assert self.minP is not None
+        assert self.maxP is not None
 
-            chunkID = computeChunkID(self.minP)
-            logger.info("Saving chunk to disk: %r" % chunkID)
-            fn = computeChunkFileName(folder, chunkID)
-            onDiskFormat = ["magic", self.voxelData, self.minP, self.maxP]
-            pickle.dump(onDiskFormat, open(fn, "wb"))
-            self.dirty = False
-            return True
+        chunkID = computeChunkID(self.minP)
+        logger.info("Saving chunk to disk: %r" % chunkID)
+        fn = computeChunkFileName(folder, chunkID)
+        onDiskFormat = ["magic", self.voxelData, self.minP, self.maxP]
+        pickle.dump(onDiskFormat, open(fn, "wb"))
+        self.dirty = False
+
+        return True
 
 
     @staticmethod
@@ -522,14 +525,11 @@ class ChunkStore:
 
 
     def sync(self):
-        "Ensure all chunks are saved to disk."
-        for chunk in self.chunks.values():
-            chunk.saveToDisk(self.saveFolder, True)
-
-        if len(filter(lambda chunk: chunk.dirty, self.chunks.values())) > 0:
-            logger.error("Tried sync, but some dirty chunks remain.")
-        else:
-            logger.info("Successfully sync'd chunks to disk.")
+        "Ensure dirty chunks are saved to disk."
+        # Don't block. If a chunk hasn't generated data yet then we'll
+        # regenerate the chunk in the next session. Nothing is lost.
+        map(lambda c: c.saveToDisk(self.saveFolder), self.chunks.values())
+        logger.info("sync'd chunks to disk.")
 
 
     def _incrementalSync(self):
@@ -666,4 +666,4 @@ if __name__ == "__main__":
     print "Active Chunks:", chunkStore.activeChunks
     print "Visible Chunks:", chunkStore.visibleChunks
 
-    #chunkStore.sync() # May take a while.
+    chunkStore.sync()
