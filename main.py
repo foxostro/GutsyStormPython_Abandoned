@@ -192,20 +192,20 @@ def update(dt):
         wasCameraModified = True
 
     if keysDown[key.LEFT]:
-        deltaRot = cameraRot.fromAxisAngle(Vector3(0,1,0), cameraRotSpeed*dt)
-        cameraRot = cameraRot.mulByQuat(deltaRot)
+        deltaRot = Quaternion.fromAxisAngle(Vector3(0,1,0), cameraRotSpeed*dt)
+        cameraRot = deltaRot.mulByQuat(cameraRot)
         wasCameraModified = True
     elif keysDown[key.RIGHT]:
-        deltaRot = cameraRot.fromAxisAngle(Vector3(0,1,0), -cameraRotSpeed*dt)
-        cameraRot = cameraRot.mulByQuat(deltaRot)
+        deltaRot = Quaternion.fromAxisAngle(Vector3(0,1,0), -cameraRotSpeed*dt)
+        cameraRot = deltaRot.mulByQuat(cameraRot)
         wasCameraModified = True
 
     if keysDown[key.UP]:
-        deltaRot = cameraRot.fromAxisAngle(Vector3(1,0,0), -cameraRotSpeed*dt)
+        deltaRot = Quaternion.fromAxisAngle(Vector3(1,0,0), -cameraRotSpeed*dt)
         cameraRot = cameraRot.mulByQuat(deltaRot)
         wasCameraModified = True
     elif keysDown[key.DOWN]:
-        deltaRot = cameraRot.fromAxisAngle(Vector3(1,0,0), cameraRotSpeed*dt)
+        deltaRot = Quaternion.fromAxisAngle(Vector3(1,0,0), cameraRotSpeed*dt)
         cameraRot = cameraRot.mulByQuat(deltaRot)
         wasCameraModified = True
 
