@@ -467,7 +467,7 @@ class ChunkStore:
         self.cameraFrustum = Frustum()
         self.activeChunks = [None] * ChunkStore.numActiveChunks
         self.visibleChunks = []
-        self.saveFolder = "world"
+        self.saveFolder = "world_%s" % str(seed)
         os.system("/bin/mkdir -p \'%s\'" % self.saveFolder)
 
 
