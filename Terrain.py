@@ -472,10 +472,10 @@ def computeChunkID(p):
 
 
 class ChunkStore:
-    RES_X = 256 # These are the dimensions of the active region.
-    RES_Y = 64
-    RES_Z = 256
-    numActiveChunks = RES_X/Chunk.sizeX * RES_Y/Chunk.sizeY * RES_Z/Chunk.sizeZ
+    activeRegionSizeX = 256 # These are the dimensions of the active region.
+    activeRegionSizeY = 64
+    activeRegionSizeZ = 256
+    numActiveChunks = activeRegionSizeX/Chunk.sizeX * activeRegionSizeY/Chunk.sizeY * activeRegionSizeZ/Chunk.sizeZ
     chunkVBOGenTimeBudget = 1.0 / 60.0
     prefetchTimeBudget = 1.0 / 60.0
     prefetchLimitChunksInFlight = 4
@@ -510,7 +510,7 @@ class ChunkStore:
         else:
             logger.info("Chunk does not exist on disk; generating: %r" % chunkID)
             chunk =  Chunk.fromProceduralGeneration(minP, maxP,
-                                                    self.RES_Y,
+                                                    self.activeRegionSizeY,
                                                     self.seed,
                                                     self.pool,
                                                     self.saveFolder)
@@ -594,9 +594,9 @@ class ChunkStore:
         cx = self.cameraPos.x
         cy = self.cameraPos.y
         cz = self.cameraPos.z
-        W = self.RES_X * self.prefetchRegionSize
-        H = self.RES_Y * self.prefetchRegionSize
-        D = self.RES_Z * self.prefetchRegionSize
+        W = self.activeRegionSizeX * self.prefetchRegionSize
+        H = self.activeRegionSizeY * self.prefetchRegionSize
+        D = self.activeRegionSizeZ * self.prefetchRegionSize
         xs = numpy.arange(cx - W, cx + W, Chunk.sizeX)
         ys = numpy.arange(cy - H, cy + H, Chunk.sizeY)
         zs = numpy.arange(cz - D, cz + D, Chunk.sizeZ)
@@ -626,9 +626,9 @@ class ChunkStore:
         cx = self.cameraPos.x
         cy = self.cameraPos.y
         cz = self.cameraPos.z
-        W = self.RES_X/2
-        H = self.RES_Y/2
-        D = self.RES_Z/2
+        W = self.activeRegionSizeX/2
+        H = self.activeRegionSizeY/2
+        D = self.activeRegionSizeZ/2
         xs = numpy.arange(cx - W, cx + W, Chunk.sizeX)
         ys = numpy.arange(cy - H, cy + H, Chunk.sizeY)
         zs = numpy.arange(cz - D, cz + D, Chunk.sizeZ)
