@@ -208,6 +208,10 @@ class Plane:
         self.D = -self.n.dot(self.p) # calculate up front for perf reasons
 
 
+    def __str__(self):
+        return "<math3D.Plane: p=%r, n=%r>" % (self.p, self.n)
+
+
     def distance(self, r):
         return self.n.dot(r) + self.D
 
@@ -260,6 +264,10 @@ class Frustum:
         self.fh = 0
 
 
+    def __str__(self):
+        return "<math3D.Frustum:\n" + "\n".join(map(str, self.pl)) + ">"
+
+
     def setCamInternals(self, angle, ratio, nearD, farD):
         """This function takes exactly the same parameters as the function
         gluPerspective. Each time the perspective definitions change, for
@@ -301,16 +309,16 @@ class Frustum:
         fc = p.sub(Z.scale(self.farD))
 
         # compute the 4 corners of the frustum on the near plane
-        self.ntl = nc.add(Y.scale(self.nh).sub(X.scale(self.nw)))
-        self.ntr = nc.add(Y.scale(self.nh).add(X.scale(self.nw)))
-        self.nbl = nc.sub(Y.scale(self.nh).sub(X.scale(self.nw)))
-        self.nbr = nc.sub(Y.scale(self.nh).add(X.scale(self.nw)))
+        self.ntl = nc.add(Y.scale(self.nh)).sub(X.scale(self.nw))
+        self.ntr = nc.add(Y.scale(self.nh)).add(X.scale(self.nw))
+        self.nbl = nc.sub(Y.scale(self.nh)).sub(X.scale(self.nw))
+        self.nbr = nc.sub(Y.scale(self.nh)).add(X.scale(self.nw))
 
         # compute the 4 corners of the frustum on the far plane
-        self.ftl = fc.add(Y.scale(self.fh).sub(X.scale(self.fw)))
-        self.ftr = fc.add(Y.scale(self.fh).add(X.scale(self.fw)))
-        self.fbl = fc.sub(Y.scale(self.fh).sub(X.scale(self.fw)))
-        self.fbr = fc.sub(Y.scale(self.fh).add(X.scale(self.fw)))
+        self.ftl = fc.add(Y.scale(self.fh)).sub(X.scale(self.fw))
+        self.ftr = fc.add(Y.scale(self.fh)).add(X.scale(self.fw))
+        self.fbl = fc.sub(Y.scale(self.fh)).sub(X.scale(self.fw))
+        self.fbr = fc.sub(Y.scale(self.fh)).add(X.scale(self.fw))
 
         # compute the six planes
         # the function set3Points assumes that the points

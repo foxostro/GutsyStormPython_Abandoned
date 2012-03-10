@@ -517,7 +517,7 @@ class ChunkStore:
                         (activeRegionSizeZ+prefetchRegionSize)/Chunk.sizeZ
 
     # The maximum number of chunks to keep in the cache at once.
-    cacheSizeLimit = max(256,numPrefetchChunks) # TODO: What size is best?
+    cacheSizeLimit = max(512, numPrefetchChunks) # TODO: What size is best?
 
 
     def __init__(self, seed):

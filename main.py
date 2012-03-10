@@ -35,6 +35,8 @@ from math3D import Quaternion, Vector3, Frustum
 import math3D
 
 
+defaultWindowW = 640
+defaultWindowH = 480
 useWireframe = False
 shader = None
 fps_display = None
@@ -61,11 +63,17 @@ along with GutsyStorm. If not, see <http://www.gnu.org/licenses/>.
 
 
 
-def updateCameraFrustum():
-    "Update the cached camera frustum and look vectors"
-    global cameraFrustum, cameraEye, cameraCenter, cameraUp
+
+def updateCameraLookVectors():
+    "Update the cached camera look vectors"
+    global cameraEye, cameraCenter, cameraUp
     cameraEye, cameraCenter, cameraUp = \
         math3D.getCameraEyeCenterUp(cameraPos, cameraRot)
+
+
+def updateCameraFrustum():
+    "Update the cached camera frustum"
+    global cameraFrustum
     cameraFrustum.setCamDef(cameraEye, cameraCenter, cameraUp)
 
 
@@ -82,15 +90,15 @@ def createWindow():
                         samples=4,
                         depth_size=32,
                         double_buffer=True)
-        window = pyglet.window.Window(width=640,
-                                      height=480,
+        window = pyglet.window.Window(width=defaultWindowW,
+                                      height=defaultWindowH,
                                       resizable=True,
                                       config=config,
                                       vsync=True)
     except pyglet.window.NoSuchConfigException:
         # Well, if it's not supported then get whatever we can get.
-        window = pyglet.window.Window(width=640,
-                                      height=480,
+        window = pyglet.window.Window(width=defaultWindowW,
+                                      height=defaultWindowH,
                                       resizable=True)
 
     return window
@@ -124,6 +132,7 @@ def createShaderObject():
     # see http://www.ozone3d.net/tutorials/glsl_lighting_phong.php
     return Shader(['''
     varying vec3 normal, lightDir0, eyeVec;
+    varying vec4 color;
 
     void main()
     {
@@ -134,16 +143,19 @@ def createShaderObject():
         lightDir0 = vec3(gl_LightSource[0].position.xyz - vVertex);
         eyeVec = -vVertex;
 
+        color = gl_Color;
+
         gl_Position = ftransform();
     }
     '''], ['''
     varying vec3 normal, lightDir0, eyeVec;
+    varying vec4 color;
 
     void main (void)
     {
         vec4 final_color =
         (gl_FrontLightModelProduct.sceneColor * gl_FrontMaterial.ambient) +
-        (gl_LightSource[0].ambient * gl_FrontMaterial.ambient);
+        (gl_LightSource[0].ambient * gl_FrontMaterial.ambient * color);
 
         vec3 N = normalize(normal);
         vec3 L0 = normalize(lightDir0);
@@ -154,6 +166,7 @@ def createShaderObject():
         {
             final_color += gl_LightSource[0].diffuse *
                            gl_FrontMaterial.diffuse *
+                           color *
                            lambertTerm0;
 
             vec3 E = normalize(eyeVec);
@@ -162,6 +175,7 @@ def createShaderObject():
                              gl_FrontMaterial.shininess );
             final_color += gl_LightSource[0].specular *
                            gl_FrontMaterial.specular *
+                           color *
                            specular;
         }
         gl_FragColor = final_color;
@@ -182,7 +196,12 @@ def main():
     shader = createShaderObject()
     fps_display = pyglet.clock.ClockDisplay(format='%(fps).0f FPS')
 
+    # Setup the initial camera.
+    updateCameraLookVectors()
+    cameraFrustum.setCamInternals(65.0, defaultWindowW/float(defaultWindowH),
+                                  0.1, 400.0)
     updateCameraFrustum()
+
     #seed = time.time()
     chunkStore = Terrain.ChunkStore(seed)
     chunkStore.setCamera(cameraPos, cameraRot, cameraFrustum)
@@ -232,6 +251,7 @@ def update(dt):
         wasCameraModified = True
 
     if wasCameraModified:
+        updateCameraLookVectors()
         updateCameraFrustum()
         chunkStore.setCamera(cameraPos, cameraRot, cameraFrustum)
 
@@ -253,6 +273,7 @@ def on_key_press(symbol, modifiers):
     elif symbol == key.P:
         print "Camera Position:", cameraPos
         print "Camera Rotation:", Quaternion.toAxisAngle(cameraRot)
+        print "Camera Frustum:", cameraFrustum
     elif symbol == key.ESCAPE:
         chunkStore.sync()
         pyglet.app.exit()
@@ -273,8 +294,8 @@ def on_resize(width, height):
     glViewport(0, 0, width, height)
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
-    gluPerspective(65, width / float(height), .1, 1000)
-    cameraFrustum.setCamInternals(65, width / float(height), .1, 1000)
+    gluPerspective(65, width / float(height), 0.1, 400.0)
+    cameraFrustum.setCamInternals(65, width / float(height), 0.1, 400.0)
     glMatrixMode(GL_MODELVIEW)
     return pyglet.event.EVENT_HANDLED
 
@@ -303,6 +324,7 @@ def on_draw():
     shader.bind()
     chunkStore.drawVisibleChunks()
     shader.unbind()
+
     glPopMatrix()
 
     #############################################
