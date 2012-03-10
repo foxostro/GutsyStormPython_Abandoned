@@ -124,6 +124,7 @@ class Chunk:
         self.dirty = True
         self.terrainTaskResult = None
         self.saveTaskResult = None
+        self.setNotDirty = lambda r: setattr(self, 'dirty', False)
 
         # Lock to protect terrain data (voxelData, verts, and norms)
         self.terrainDataLock = multiprocessing.Lock()
@@ -166,13 +167,6 @@ class Chunk:
         return chunk
 
 
-    def setNotDirty(self):
-        """Called by the async save operation when complete to mark the chunk
-        as not being dirty.
-        """
-        self.dirty = False
-
-
     def _callbackTerrainTaskHasFinished(self, results):
         "Callback for when the terrain generating/loading task is finished."
         with self.terrainDataLock:
@@ -189,7 +183,7 @@ class Chunk:
             # to save it asynchronously.
             self.saveTaskResult = self.pool.apply_async(saveChunkToDiskWorker,
                 [self.folder, self.voxelData, self.minP, self.maxP],
-                callback = lambda r: self.setNotDirty())
+                callback = self.setNotDirty)
 
 
     def maybeGenerateVBOs(self):
