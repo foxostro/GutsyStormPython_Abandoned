@@ -331,7 +331,6 @@ class Frustum:
         self.pl[Frustum.FARP] = Plane.makeFromPoints(self.ftr, self.ftl, self.fbl)
 
 
-    #@profile
     def boxInFrustum(self, vertices):
         result = Frustum.INSIDE
         outR = 0

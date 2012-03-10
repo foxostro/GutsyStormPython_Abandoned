@@ -32,11 +32,7 @@ from math3D import Vector3, Quaternion, Frustum
 import math3D
 
 
-numInFlightChunkTasks = 0
-WOULD_BLOCK = 0
-NOW_AVAILABLE = 1
-ERROR = 2
-logger=multiprocessing.log_to_stderr(logging.INFO)
+logger = multiprocessing.log_to_stderr(logging.INFO)
 
 
 class memoized(object):
@@ -67,13 +63,8 @@ class memoized(object):
       return functools.partial(self.__call__, obj)
 
 
-
-def decrNumInFlightChunkTasks(r):
-    global numInFlightChunkTasks
-    numInFlightChunkTasks -= 1
-
-
 def asyncGenerateTerrain(seed, terrainHeight, minP, maxP):
+    logger.debug("Generating new chunk data at %s" % str(minP))
     voxelData = Chunk.computeTerrainData(seed, terrainHeight, minP, maxP)
     verts, norms = Chunk.generateGeometry(voxelData, minP, maxP)
     return voxelData, verts, norms
@@ -84,7 +75,7 @@ def asyncLoadTerrain(folder, chunkID):
     if not os.path.exists(fn):
         raise Exception("File does not exist: %s" % fn)
 
-    logger.info("Loading chunk from disk: %s" % fn)
+    logger.debug("Loading chunk from disk: %s" % fn)
     onDiskFormat = pickle.load(open(fn, "rb"))
 
     if not len(onDiskFormat) == 4:
@@ -108,7 +99,7 @@ def saveChunkToDiskWorker(folder, voxelData, minP, maxP):
     assert maxP is not None
 
     fn = computeChunkFileName(folder, computeChunkIDFromMinP(minP))
-    logger.info("Saving chunk to disk: %s" % fn)
+    logger.debug("Saving chunk to disk: %s" % fn)
     onDiskFormat = ["magic", voxelData, minP, maxP]
     pickle.dump(onDiskFormat, open(fn, "wb"))
 
@@ -129,9 +120,13 @@ class Chunk:
         self.numTrianglesInBatch = 0
         self.vbo_verts = GLuint(0)
         self.vbo_norms = GLuint(0)
-        self.asyncTerrainResult = None
         self.pool = None
         self.dirty = True
+        self.terrainTaskResult = None
+        self.saveTaskResult = None
+
+        # Lock to protect terrain data (voxelData, verts, and norms)
+        self.terrainDataLock = multiprocessing.Lock()
 
 
     def __repr__(self):
@@ -149,7 +144,6 @@ class Chunk:
     @classmethod
     def fromProceduralGeneration(cls, minP, maxP, terrainHeight, seed,
                                  pool, folder):
-        global numInFlightChunkTasks
         chunk = Chunk()
         chunk.minP = minP # extents of the chunk in world-space
         chunk.maxP = maxP #   "
@@ -165,10 +159,9 @@ class Chunk:
 
         # Spin off a task to generate terrain and geometry.
         # Chunk will have no terrain or geometry until this has finished.
-        chunk.asyncTerrainResult = \
-            pool.apply_async(asyncGenerateTerrain,
-                             [seed, terrainHeight, minP, maxP])
-        numInFlightChunkTasks += 1
+        chunk.terrainTaskResult = pool.apply_async(asyncGenerateTerrain,
+            [seed, terrainHeight, minP, maxP],
+            callback=lambda r: chunk._callbackTerrainTaskHasFinished(r))
 
         return chunk
 
@@ -180,65 +173,33 @@ class Chunk:
         self.dirty = False
 
 
-    def updateTerrainFromAsyncGenResults(self, block=False):
-        global numInFlightChunkTasks
+    def _callbackTerrainTaskHasFinished(self, results):
+        "Callback for when the terrain generating/loading task is finished."
+        with self.terrainDataLock:
+            self.terrainTaskResult = None
+            self.voxelData, self.verts, self.norms = results
+            assert self.voxelData is not None
+            assert self.verts is not None
+            assert self.norms is not None
+            assert len(self.verts)%3==0
 
-        if not self.asyncTerrainResult:
-            return NOW_AVAILABLE
+            self.numTrianglesInBatch = len(self.verts)/3
 
-        # We may want to block and wait for results now.
-        if block and not self.asyncTerrainResult.ready():
-            logger.info("blocking to wait for terrain data")
-            self.asyncTerrainResult.wait(60)
-            if not self.asyncTerrainResult.ready():
-                raise Exception("Blocked for 60s waiting for terrain data " \
-                                "and never got it. It's probably not coming." \
-                                " Bailing out.")
-
-        # If results are not ready then bail out. 
-        if not self.asyncTerrainResult.ready():
-            return WOULD_BLOCK
-
-        if not self.asyncTerrainResult.successful():
-            logger.error("Terrain generation failed for chunk %r" % self.minP)
-            self.asyncTerrainResult = None
-            return ERROR
-
-        self.voxelData, self.verts, self.norms = self.asyncTerrainResult.get()
-        self.asyncTerrainResult = None
-
-        assert self.voxelData is not None
-        assert self.verts is not None
-        assert self.norms is not None
-
-        assert len(self.verts)%3==0
-        self.numTrianglesInBatch = len(self.verts)/3
-
-        # Chunk is now dirty as it has never been saved. Spin off a task
-        # to save it asynchronously.
-        # TODO: Will need locking when chunks become modifiable.
-        self.pool.apply_async(saveChunkToDiskWorker,
-                              [self.folder, self.voxelData,
-                               self.minP, self.maxP],
-                              callback = lambda r: self.setNotDirty())
-
-        return NOW_AVAILABLE
+            # Chunk is now dirty as it has never been saved. Spin off a task
+            # to save it asynchronously.
+            self.saveTaskResult = self.pool.apply_async(saveChunkToDiskWorker,
+                [self.folder, self.voxelData, self.minP, self.maxP],
+                callback = lambda r: self.setNotDirty())
 
 
     def maybeGenerateVBOs(self):
-        "Check up on the async terrain generation task and maybe generate VBOs"
-        didSomething = False
-
-        if NOW_AVAILABLE == self.updateTerrainFromAsyncGenResults(False):
+        "If terrain geometry is available then generate VBOs"
+        with self.terrainDataLock:
             if self.verts and not self.vbo_verts:
                 self.vbo_verts = self.createVertexBufferObject(self.verts)
-                didSomething = True
 
             if self.norms and not self.vbo_norms:
                 self.vbo_norms = self.createVertexBufferObject(self.norms)
-                didSomething = True
-
-        return didSomething
 
 
     def draw(self):
@@ -287,12 +248,22 @@ class Chunk:
 
         # First, make sure we can save right now. Maybe block to wait for
         # terrain results to come back.
-        if self.updateTerrainFromAsyncGenResults(block) != NOW_AVAILABLE:
-            return False
+        if self.terrainTaskResult and not self.terrainTaskResult.ready():
+            if block:
+                self.terrainTaskResult.wait()
+            else:
+                return False # would block, so bail out
 
-        saveChunkToDiskWorker(self.folder, self.voxelData,
-                              self.minP, self.maxP)
-        self.dirty = False
+        with self.terrainDataLock:
+            if self.saveTaskResult and not self.saveTaskResult.ready():
+                self.saveTaskResult.wait() # wait for save task to finish
+            else:
+                # Save synchronously.
+                saveChunkToDiskWorker(self.folder, self.voxelData,
+                                      self.minP, self.maxP)
+
+            self.dirty = False
+            self.saveTaskResult = None
 
         return True
 
@@ -306,8 +277,6 @@ class Chunk:
 
     @classmethod
     def loadFromDisk(cls, folder, chunkID, minP, maxP, pool):
-        global numInFlightChunkTasks
-
         chunk = Chunk()
         chunk.minP = minP # extents of the chunk in world-space
         chunk.maxP = maxP #   "
@@ -323,9 +292,9 @@ class Chunk:
         chunk.folder = folder
 
         # Spin off a task to load the terrain.
-        numInFlightChunkTasks += 1
-        chunk.asyncTerrainResult = pool.apply_async(asyncLoadTerrain,
-            [folder, chunkID], callback=decrNumInFlightChunkTasks)
+        chunk.terrainTaskResult = pool.apply_async(asyncLoadTerrain,
+            [folder, chunkID],
+            callback=lambda r: chunk._callbackTerrainTaskHasFinished(r))
 
         return chunk
 
@@ -381,7 +350,7 @@ class Chunk:
         The size of the chunk is unscaled so that, for example, the width of
         the chunk is equal to maxP-minP. Ditto for the other major axii.
         """
-        logger.info("Generating terrain for chunk: %r" % minP)
+        logger.debug("Generating terrain for chunk: %r" % minP)
         minX, minY, minZ = int(minP.x), int(minP.y), int(minP.z)
         maxX, maxY, maxZ = int(maxP.x), int(maxP.y), int(maxP.z)
 
@@ -497,27 +466,12 @@ class ChunkStore:
     activeRegionSizeZ = 256
 
     # The number of chunks which will be in the active region.
-    numActiveChunks = activeRegionSizeX/Chunk.sizeX * activeRegionSizeY/Chunk.sizeY * activeRegionSizeZ/Chunk.sizeZ
-
-    # The time per frame to devote to opportunistic VBO generation.
-    chunkVBOGenTimeBudget = 1.0 / 60.0
-
-    # The time per frame to devote to chunk prefetching.
-    prefetchTimeBudget = 0.5 / 60.0
-
-    # The max number of chunks which may be in flight when prefetching.
-    prefetchLimitChunksInFlight = 4
-
-    # Prefetch chunks in a region this much larger than the active region.
-    prefetchRegionSize = 64
-
-    # Max number of prefetch+active chunks if prefetching is allowed to finish.
-    numPrefetchChunks = (activeRegionSizeX+prefetchRegionSize)/Chunk.sizeX * \
-                        activeRegionSizeY/Chunk.sizeY * \
-                        (activeRegionSizeZ+prefetchRegionSize)/Chunk.sizeZ
+    numActiveChunks = activeRegionSizeX/Chunk.sizeX * \
+                      activeRegionSizeY/Chunk.sizeY * \
+                      activeRegionSizeZ/Chunk.sizeZ
 
     # The maximum number of chunks to keep in the cache at once.
-    cacheSizeLimit = max(512, numPrefetchChunks) # TODO: What size is best?
+    cacheSizeLimit = max(numActiveChunks, 512) # TODO: What size is best?
 
 
     def __init__(self, seed):
@@ -539,8 +493,6 @@ class ChunkStore:
         if chunkID not in self.chunks:
             raise Exception("Chunk is not in the cache.")
 
-        logger.info("evicting chunk from cache: %r" % chunkID)
-
         # Sync chunks in case we evict a dirty chunk or a chunk with tasks
         # in flight. Must do this synchronously.
         self.chunks[chunkID].saveToDisk(self.saveFolder, True)
@@ -551,20 +503,23 @@ class ChunkStore:
         del self.chunks[chunkID]
 
 
-    def _performEvictionIfNecessary(self):
-        "If the cache is full, evict a chunk (not an active chunk)"
-        if len(self.chunks) < ChunkStore.cacheSizeLimit:
-            return
-
-        logger.warn("Cache is full. Evicting a chunk.")
+    def _performOneEviction(self):
+        "Evict one chunk from the cache (not an active chunk)."
         for chunk in self.chunks.values():
             if chunk not in self.activeChunks:
                 toEvictID = computeChunkIDFromMinP(chunk.minP)
                 self._evictChunk(toEvictID)
                 logger.info("Evicted a chunk. Cache now contains " \
-                        "%d/%d chunks" % \
-                        (len(self.chunks), self.cacheSizeLimit))
+                            "%d/%d chunks" % (len(self.chunks),
+                                              self.cacheSizeLimit))
                 assert len(self.chunks) < self.cacheSizeLimit
+                return
+
+
+    def _performEvictionIfNecessary(self):
+        "Evict chunks until the cache is no longer larger than the max size."
+        while len(self.chunks) >= ChunkStore.cacheSizeLimit:
+            self._performOneEviction()
 
 
     def _generateOrLoadChunk(self, chunkID, minP):
@@ -573,13 +528,11 @@ class ChunkStore:
         maxP = minP.add(Vector3(Chunk.sizeX, Chunk.sizeY, Chunk.sizeZ))
 
         if os.path.exists(computeChunkFileName(self.saveFolder,chunkID)):
-            logger.info("Chunk seems to exist on disk; loading: %r" % chunkID)
             chunk = Chunk.loadFromDisk(self.saveFolder,
                                        chunkID,
                                        minP, maxP,
                                        self.pool)
         else:
-            logger.info("Chunk does not exist on disk; generating: %r" % chunkID)
             chunk =  Chunk.fromProceduralGeneration(minP, maxP,
                                                     self.activeRegionSizeY,
                                                     self.seed,
@@ -601,31 +554,11 @@ class ChunkStore:
             minP = Chunk.computeChunkMinP(p)
             chunk = self._generateOrLoadChunk(chunkID, minP)
             self.chunks[chunkID] = chunk
-            logger.info("Fetched a chunk. Cache now contains %d/%d chunks" % \
-                        (len(self.chunks), self.cacheSizeLimit))
+            logger.info("Added chunk to the cache. It now contains " \
+                        "%d/%d chunks" % (len(self.chunks),
+                                          self.cacheSizeLimit))
 
         return chunk
-
-
-    def prefetchChunk(self, p):
-        """If necessary, and if the cache is not yet full, generate the chunk
-        at the specified point in space. Return True if a chunk was actually
-        prefetched.
-        """
-        minP = Chunk.computeChunkMinP(p)
-        chunkID = computeChunkIDFromMinP(minP)
-        if chunkID in self.chunks:
-            return False
-
-        if len(self.chunks) < ChunkStore.cacheSizeLimit:
-            chunk = self._generateOrLoadChunk(chunkID, minP)
-            self.chunks[chunkID] = chunk
-            logger.info("Prefetched a chunk. Cache now contains " \
-                        "%d/%d chunks" % \
-                        (len(self.chunks), self.cacheSizeLimit))
-            return True
-        else:
-            return False # would cause cache to be more than max size
 
 
     def sync(self, bl=False):
@@ -636,56 +569,8 @@ class ChunkStore:
         logger.info("sync'd chunks to disk.")
 
 
-    def _incrementalVBOGeneration(self):
-        """Generate a few VBOs per frame to keep the game interactive.
-        Only generates VBOs for chunks in the visible region.
-        """
-        startTime = time.time()
-
-        # Generate VBOs for any visible chunks which have geometry.
-        # Since these are on screen, we need the VBO now.
-        map(Chunk.maybeGenerateVBOs, self.visibleChunks)
-
-        # Opportunistically generate VBOs for active chunks until deadline.
-        if time.time() - startTime > self.chunkVBOGenTimeBudget:
-            return
-        for chunk in self.activeChunks:
-            chunk.maybeGenerateVBOs()
-            if time.time() - startTime > self.chunkVBOGenTimeBudget:
-                return
-
-
-    def _incrementalPrefetch(self):
-        """Take some time to opportunistically generate/load chunks outside the
-        active region in case we want them later.
-        """
-        startTime = time.time()
-
-        prefetchTimeBudget = self.prefetchTimeBudget
-        prefetchLimitChunksInFlight = self.prefetchLimitChunksInFlight
-        cx = self.cameraPos.x
-        cy = self.cameraPos.y
-        cz = self.cameraPos.z
-        W = self.activeRegionSizeX + self.prefetchRegionSize
-        H = self.activeRegionSizeY
-        D = self.activeRegionSizeZ + self.prefetchRegionSize
-        xs = numpy.arange(cx - W, cx + W, Chunk.sizeX)
-        ys = numpy.arange(cy - H, cy + H, Chunk.sizeY)
-        zs = numpy.arange(cz - D, cz + D, Chunk.sizeZ)
-
-        for x,y,z in itertools.product(xs, ys, zs):
-            if time.time() - startTime > prefetchTimeBudget:
-                return
-
-            if numInFlightChunkTasks > prefetchLimitChunksInFlight:
-                return
-
-            self.prefetchChunk(Vector3(x, y, z))
-
-
     def update(self, dt):
-        self._incrementalVBOGeneration()
-        self._incrementalPrefetch()
+        map(Chunk.maybeGenerateVBOs, self.visibleChunks)
 
 
     def _updateInternalActiveAndVisibleChunksCache(self):
