@@ -15,3 +15,6 @@ Dependencies:
 To Run: You must build a few frameworks before you can use some of the
 prototype scripts. For example, Perlin Noise generation requires the
 framework pnoise.framework to be built and installed to "./Frameworks/".
+
+Author: Andrew Fox <foxostro@gmail.com>
+Project Home: <http://github.com/foxostro/GutsyStorm>

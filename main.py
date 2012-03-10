@@ -1,5 +1,21 @@
 #!/usr/bin/env python
 # vim:ts=4:sw=4:et:filetype=python
+#
+# This file is part of GutsyStorm.
+# GutsyStorm  Copyright (C) 2012  Andrew Fox <foxostro@gmail.com>.
+#
+# GutsyStorm is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# GutsyStorm is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with GutsyStorm.  If not, see <http://www.gnu.org/licenses/>.
 """Generates a bit of terrain and renders it in a window.
 Prototype test-bed for the terrain generator and chunk geometry generation.
 """
@@ -33,6 +49,16 @@ cameraFrustum = Frustum()
 cameraEye = Vector3(0,0,0)
 cameraCenter = Vector3(0,0,0)
 cameraUp = Vector3(0,0,0)
+startupLicenseMessage = """
+GutsyStorm  Copyright (C) 2012  Andrew Fox <foxostro@gmail.com>.
+
+This program comes with ABSOLUTELY NO WARRANTY.
+
+This is free software, and you are welcome to redistribute it under certain
+conditions. You should have received a copy of the GNU General Public License
+along with GutsyStorm. If not, see <http://www.gnu.org/licenses/>.
+"""
+
 
 
 def updateCameraFrustum():
@@ -149,6 +175,8 @@ def main():
     global fps_display
     global chunkStore
     global seed
+
+    print startupLicenseMessage
 
     setupGLState()
     shader = createShaderObject()
