@@ -166,7 +166,6 @@ class Chunk:
         return chunk
 
 
-    @profile
     def _callbackTerrainTaskHasFinished(self, results):
         "Callback for when the terrain generating/loading task is finished."
         with self.terrainDataLock:
@@ -290,7 +289,6 @@ class Chunk:
 
 
     @staticmethod
-    @profile
     def createVertexBufferObject(a):
         data = (GLfloat * len(a)).from_buffer(a)
         vbo = GLuint()
