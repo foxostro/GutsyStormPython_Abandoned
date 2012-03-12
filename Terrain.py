@@ -66,8 +66,9 @@ class memoized(object):
 def asyncGenerateTerrain(seed, terrainHeight, minP, maxP):
     logger.debug("Generating new chunk data at %s" % str(minP))
     voxelData = Chunk.computeTerrainData(seed, terrainHeight, minP, maxP)
-    verts, norms = Chunk.generateGeometry(voxelData, minP, maxP)
-    return voxelData, verts, norms
+    verts, norms, numTris = \
+        Chunk.generateGeometry(voxelData, minP, maxP)
+    return voxelData, verts, norms, numTris
 
 
 def asyncLoadTerrain(folder, chunkID):
@@ -88,9 +89,10 @@ def asyncLoadTerrain(folder, chunkID):
     minP = onDiskFormat[2]
     maxP = onDiskFormat[3]
 
-    verts, norms = Chunk.generateGeometry(voxelData, minP, maxP)
+    verts, norms, numTris = \
+        Chunk.generateGeometry(voxelData, minP, maxP)
 
-    return voxelData, verts, norms
+    return voxelData, verts, norms, numTris
 
 
 def saveChunkToDiskWorker(folder, voxelData, minP, maxP):
@@ -117,7 +119,9 @@ class Chunk:
         self.maxP = Vector3(0,0,0)
         self.boxVertices = math3D.getBoxVertices(self.minP, self.maxP)
         self.voxelData = None
-        self.numTrianglesInBatch = 0
+        self.verts = None # ctypes buffer of vertex data
+        self.norms = None # ctypes buffer of normal data
+        self.numTrianglesInBatch = 0 # number of triangles in the vertex data
         self.vbo_verts = GLuint(0)
         self.vbo_norms = GLuint(0)
         self.pool = None
@@ -153,8 +157,8 @@ class Chunk:
         chunk.vbo_norms = GLuint(0)
         chunk.voxelData = None
         chunk.numTrianglesInBatch = 0
-        chunk.verts = None
-        chunk.norms = None
+        chunk.verts = None # ctypes buffer of vertex data
+        chunk.norms = None # ctypes buffer of normal data
         chunk.pool = pool
         chunk.folder = folder
 
@@ -171,13 +175,11 @@ class Chunk:
         "Callback for when the terrain generating/loading task is finished."
         with self.terrainDataLock:
             self.terrainTaskResult = None
-            self.voxelData, self.verts, self.norms = results
-            assert self.voxelData is not None
-            assert self.verts is not None
-            assert self.norms is not None
-            assert len(self.verts)%3==0
+            self.voxelData, verts, norms, self.numTrianglesInBatch = results
 
-            self.numTrianglesInBatch = len(self.verts)/3
+            # Costly conversion from Python-style list to ctypes array.
+            self.verts = (GLfloat * len(verts))(*verts)
+            self.norms = (GLfloat * len(norms))(*norms)
 
             # Chunk is now dirty as it has never been saved. Spin off a task
             # to save it asynchronously.
@@ -220,6 +222,7 @@ class Chunk:
         """Destroy the chunk and free all resources consumed by it, including
         GPU memory for its vertex buffer objects.
         """
+        # TODO: What if I'm waiting for a save or terrain task?
         doomed_buffers = [self.vbo_verts, self.vbo_norms]
         buffers = (GLuint * len(doomed_buffers))(*doomed_buffers)
         glDeleteBuffers(len(buffers), buffers)
@@ -227,6 +230,8 @@ class Chunk:
         self.vbo_verts = GLuint(0) # 0 is an invalid handle
         self.vbo_norms = GLuint(0) # 0 is an invalid handle
 
+        self.verts = None
+        self.norms = None
         self.voxelData = None
 
 
@@ -279,8 +284,8 @@ class Chunk:
         chunk.vbo_norms = GLuint(0)
         chunk.voxelData = None
         chunk.numTrianglesInBatch = 0
-        chunk.verts = None
-        chunk.norms = None
+        chunk.verts = None # ctypes buffer of vertex data
+        chunk.norms = None # ctypes buffer of vertex data
         chunk.dirty = False
         chunk.pool = pool
         chunk.folder = folder
@@ -294,11 +299,11 @@ class Chunk:
 
 
     @staticmethod
-    def createVertexBufferObject(verts):
-        assert verts
+    #@profile
+    def createVertexBufferObject(data):
+        assert data
         vbo_verts = GLuint()
         glGenBuffers(1, pointer(vbo_verts))
-        data = (GLfloat * len(verts))(*verts)
         glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
         glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
         return vbo_verts
@@ -433,7 +438,8 @@ class Chunk:
                 norms.extend([ -1,   0,   0,   -1,   0,   0,   -1,   0,   0,
                                -1,   0,   0,   -1,   0,   0,   -1,   0,   0])
 
-        return verts, norms
+        numTris = len(verts) / 3
+        return verts, norms, numTris
 
 
 @memoized
