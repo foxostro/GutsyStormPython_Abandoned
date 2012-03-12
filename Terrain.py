@@ -26,6 +26,7 @@ import numpy
 import time
 import math
 import functools
+import array
 import multiprocessing, logging
 from pnoise import PerlinNoise
 from math3D import Vector3, Quaternion, Frustum
@@ -153,12 +154,6 @@ class Chunk:
         chunk.minP = minP # extents of the chunk in world-space
         chunk.maxP = maxP #   "
         chunk.boxVertices = math3D.getBoxVertices(chunk.minP, chunk.maxP)
-        chunk.vbo_verts = GLuint(0)
-        chunk.vbo_norms = GLuint(0)
-        chunk.voxelData = None
-        chunk.numTrianglesInBatch = 0
-        chunk.verts = None # ctypes buffer of vertex data
-        chunk.norms = None # ctypes buffer of normal data
         chunk.pool = pool
         chunk.folder = folder
 
@@ -171,15 +166,13 @@ class Chunk:
         return chunk
 
 
+    @profile
     def _callbackTerrainTaskHasFinished(self, results):
         "Callback for when the terrain generating/loading task is finished."
         with self.terrainDataLock:
             self.terrainTaskResult = None
-            self.voxelData, verts, norms, self.numTrianglesInBatch = results
-
-            # Costly conversion from Python-style list to ctypes array.
-            self.verts = (GLfloat * len(verts))(*verts)
-            self.norms = (GLfloat * len(norms))(*norms)
+            self.voxelData, self.verts, self.norms, \
+                self.numTrianglesInBatch = results
 
             # Chunk is now dirty as it has never been saved. Spin off a task
             # to save it asynchronously.
@@ -223,16 +216,20 @@ class Chunk:
         GPU memory for its vertex buffer objects.
         """
         # TODO: What if I'm waiting for a save or terrain task?
+        
+        # Free GPU resources consumed by the chunk.
         doomed_buffers = [self.vbo_verts, self.vbo_norms]
         buffers = (GLuint * len(doomed_buffers))(*doomed_buffers)
         glDeleteBuffers(len(buffers), buffers)
+        self.vbo_verts = self.vbo_norms = GLuint(0)
 
-        self.vbo_verts = GLuint(0) # 0 is an invalid handle
-        self.vbo_norms = GLuint(0) # 0 is an invalid handle
-
+        # After being destroyed, chunk has no voxel data at all.
+        self.voxelData = None
+        
+        # These basically cache the geometry and are invalid
+        # after voxelData is destroyed.
         self.verts = None
         self.norms = None
-        self.voxelData = None
 
 
     def saveToDisk(self, folder, block=False):
@@ -280,12 +277,6 @@ class Chunk:
         chunk.minP = minP # extents of the chunk in world-space
         chunk.maxP = maxP #   "
         chunk.boxVertices = math3D.getBoxVertices(chunk.minP, chunk.maxP)
-        chunk.vbo_verts = GLuint(0)
-        chunk.vbo_norms = GLuint(0)
-        chunk.voxelData = None
-        chunk.numTrianglesInBatch = 0
-        chunk.verts = None # ctypes buffer of vertex data
-        chunk.norms = None # ctypes buffer of vertex data
         chunk.dirty = False
         chunk.pool = pool
         chunk.folder = folder
@@ -299,14 +290,14 @@ class Chunk:
 
 
     @staticmethod
-    #@profile
-    def createVertexBufferObject(data):
-        assert data
-        vbo_verts = GLuint()
-        glGenBuffers(1, pointer(vbo_verts))
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
+    @profile
+    def createVertexBufferObject(a):
+        data = (GLfloat * len(a)).from_buffer(a)
+        vbo = GLuint()
+        glGenBuffers(1, pointer(vbo))
+        glBindBuffer(GL_ARRAY_BUFFER, vbo)
         glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
-        return vbo_verts
+        return vbo
 
 
     @staticmethod
@@ -439,7 +430,7 @@ class Chunk:
                                -1,   0,   0,   -1,   0,   0,   -1,   0,   0])
 
         numTris = len(verts) / 3
-        return verts, norms, numTris
+        return array.array('f', verts), array.array('f', norms), numTris
 
 
 @memoized
