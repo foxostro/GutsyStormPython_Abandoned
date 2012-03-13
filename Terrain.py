@@ -215,7 +215,7 @@ class Chunk:
         GPU memory for its vertex buffer objects.
         """
         # TODO: What if I'm waiting for a save or terrain task?
-        
+
         # Free GPU resources consumed by the chunk.
         doomed_buffers = [self.vbo_verts, self.vbo_norms]
         buffers = (GLuint * len(doomed_buffers))(*doomed_buffers)
@@ -224,7 +224,7 @@ class Chunk:
 
         # After being destroyed, chunk has no voxel data at all.
         self.voxelData = None
-        
+
         # These basically cache the geometry and are invalid
         # after voxelData is destroyed.
         self.verts = None
