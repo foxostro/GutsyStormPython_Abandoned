@@ -67,9 +67,11 @@ class memoized(object):
 def procedurallyGenerateChunkWorker(seed, terrainHeight, minP, maxP):
     logger.debug("Generating new chunk data at %s" % str(minP))
     voxelData = Chunk.computeTerrainData(seed, terrainHeight, minP, maxP)
-    verts, norms, numTris = \
+
+    verts, norms, txcds, numTris = \
         Chunk.generateGeometry(voxelData, minP, maxP)
-    return voxelData, verts, norms, numTris
+
+    return voxelData, verts, norms, txcds, numTris
 
 
 def loadChunkFromDiskWorker(folder, chunkID):
@@ -90,10 +92,10 @@ def loadChunkFromDiskWorker(folder, chunkID):
     minP = onDiskFormat[2]
     maxP = onDiskFormat[3]
 
-    verts, norms, numTris = \
+    verts, norms, txcds, numTris = \
         Chunk.generateGeometry(voxelData, minP, maxP)
 
-    return voxelData, verts, norms, numTris
+    return voxelData, verts, norms, txcds, numTris
 
 
 def saveChunkToDiskWorker(folder, voxelData, minP, maxP):
@@ -120,11 +122,13 @@ class Chunk:
         self.maxP = Vector3(0,0,0)
         self.boxVertices = math3D.getBoxVertices(self.minP, self.maxP)
         self.voxelData = None
-        self.verts = None # ctypes buffer of vertex data
-        self.norms = None # ctypes buffer of normal data
+        self.verts = None
+        self.norms = None
+        self.txcds = None
         self.numTrianglesInBatch = 0 # number of triangles in the vertex data
         self.vbo_verts = GLuint(0)
         self.vbo_norms = GLuint(0)
+        self.vbo_txcds = GLuint(0)
         self.pool = None
         self.dirty = True
         self.terrainTaskResult = None
@@ -159,9 +163,10 @@ class Chunk:
 
         # Spin off a task to generate terrain and geometry.
         # Chunk will have no terrain or geometry until this has finished.
-        chunk.terrainTaskResult = pool.apply_async(procedurallyGenerateChunkWorker,
-            [seed, terrainHeight, minP, maxP],
-            callback=lambda r: chunk._callbackTerrainTaskHasFinished(r))
+        chunk.terrainTaskResult = \
+            pool.apply_async(procedurallyGenerateChunkWorker,
+                [seed, terrainHeight, minP, maxP],
+                callback=lambda r: chunk._callbackTerrainTaskHasFinished(r))
 
         return chunk
 
@@ -170,7 +175,7 @@ class Chunk:
         "Callback for when the terrain generating/loading task is finished."
         with self.terrainDataLock:
             self.terrainTaskResult = None
-            self.voxelData, self.verts, self.norms, \
+            self.voxelData, self.verts, self.norms, self.txcds, \
                 self.numTrianglesInBatch = results
 
             # Chunk is now dirty as it has never been saved. Spin off a task
@@ -189,6 +194,9 @@ class Chunk:
             if self.norms and not self.vbo_norms:
                 self.vbo_norms = self.createVertexBufferObject(self.norms)
 
+            if self.txcds and not self.vbo_txcds:
+                self.vbo_txcds = self.createVertexBufferObject(self.txcds)
+
 
     def draw(self):
         # If geometry is not available then there is nothing to do now.
@@ -197,6 +205,7 @@ class Chunk:
 
         glEnableClientState(GL_VERTEX_ARRAY)
         glEnableClientState(GL_NORMAL_ARRAY)
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo_verts)
         glVertexPointer(3, GL_FLOAT, 0, 0)
@@ -204,10 +213,14 @@ class Chunk:
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo_norms)
         glNormalPointer(GL_FLOAT, 0, 0)
 
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo_txcds)
+        glTexCoordPointer(2, GL_FLOAT, 0, 0);
+
         glDrawArrays(GL_TRIANGLES, 0, self.numTrianglesInBatch)
 
-        glDisableClientState(GL_VERTEX_ARRAY)
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY)
         glDisableClientState(GL_NORMAL_ARRAY)
+        glDisableClientState(GL_VERTEX_ARRAY)
 
 
     def destroy(self):
@@ -217,10 +230,10 @@ class Chunk:
         # TODO: What if I'm waiting for a save or terrain task?
 
         # Free GPU resources consumed by the chunk.
-        doomed_buffers = [self.vbo_verts, self.vbo_norms]
+        doomed_buffers = [self.vbo_verts, self.vbo_norms, self.vbo_txcds]
         buffers = (GLuint * len(doomed_buffers))(*doomed_buffers)
         glDeleteBuffers(len(buffers), buffers)
-        self.vbo_verts = self.vbo_norms = GLuint(0)
+        self.vbo_verts = self.vbo_norms = self.vbo_txcds = GLuint(0)
 
         # After being destroyed, chunk has no voxel data at all.
         self.voxelData = None
@@ -229,6 +242,7 @@ class Chunk:
         # after voxelData is destroyed.
         self.verts = None
         self.norms = None
+        self.txcds = None
 
 
     def saveToDisk(self, folder, block=False):
@@ -378,6 +392,7 @@ class Chunk:
 
         verts = []
         norms = []
+        txcds = []
 
         for x,y,z in itertools.product(range(minX, maxX),
                                        range(minY, maxY),
@@ -391,6 +406,8 @@ class Chunk:
                               x-L, y+L, z+L,  x+L, y+L, z+L,  x+L, y+L, z-L])
                 norms.extend([  0,  +1,   0,    0,  +1,   0,    0,  +1,   0,
                                 0,  +1,   0,    0,  +1,   0,    0,  +1,   0])
+                txcds.extend([  1, 0,           0, 1,           1, 1,
+                                1, 0,           0, 0,           0, 1])
 
             # Bottom Face
             if not (y-1>=minY and voxelData[x-minX, y-minY-1, z-minZ]):
@@ -398,6 +415,8 @@ class Chunk:
                               x+L, y-L, z-L,  x+L, y-L, z+L,  x-L, y-L, z+L])
                 norms.extend([  0,  -1,   0,      0, -1,  0,    0,  -1,   0,
                                 0,  -1,   0,      0, -1,  0,    0,  -1,   0])
+                txcds.extend([  1, 1,           0, 1,           1, 0,
+                                0, 1,           0, 0,           1, 0])
 
             # Front Face
             if not (z+1<maxZ and voxelData[x-minX, y-minY, z-minZ+1]):
@@ -405,6 +424,8 @@ class Chunk:
                               x-L, y-L, z+L,  x+L, y-L, z+L,  x+L, y+L, z+L])
                 norms.extend([  0,   0,  +1,    0,   0,  +1,    0,   0,  +1,
                                 0,   0,  +1,    0,   0,  +1,    0,   0,  +1])
+                txcds.extend([  0, 0,           1, 1,           0, 1,
+                                0, 0,           1, 0,           1, 1])
 
             # Back Face
             if not (z-1>=minZ and voxelData[x-minX, y-minY, z-minZ-1]):
@@ -412,6 +433,8 @@ class Chunk:
                               x+L, y+L, z-L,  x+L, y-L, z-L,  x-L, y-L, z-L])
                 norms.extend([  0,   0,  -1,    0,   0,  -1,    0,   0,  -1,
                                 0,   0,  -1,    0,   0,  -1,    0,   0,  -1])
+                txcds.extend([  0, 1,           1, 1,           0, 0,
+                                1, 1,           1, 0,           0, 0])
 
             # Right Face
             if not (x+1<maxX and voxelData[x-minX+1, y-minY, z-minZ]):
@@ -419,6 +442,8 @@ class Chunk:
                               x+L, y-L, z-L,  x+L, y+L, z-L,  x+L, y-L, z+L])
                 norms.extend([ +1,   0,   0,   +1,   0,   0,   +1,   0,   0,
                                +1,   0,   0,   +1,   0,   0,   +1,   0,   0])
+                txcds.extend([  0, 1,           1, 1,           1, 0,
+                                0, 0,           0, 1,           1, 0])
 
             # Left Face
             if not (x-1>=minX and voxelData[x-minX-1, y-minY, z-minZ]):
@@ -426,9 +451,14 @@ class Chunk:
                               x-L, y-L, z+L,  x-L, y+L, z-L,  x-L, y-L, z-L])
                 norms.extend([ -1,   0,   0,   -1,   0,   0,   -1,   0,   0,
                                -1,   0,   0,   -1,   0,   0,   -1,   0,   0])
+                txcds.extend([  1, 0,           1, 1,           0, 1,
+                                1, 0,           0, 1,           0, 0])
 
         numTris = len(verts) / 3
-        return array.array('f', verts), array.array('f', norms), numTris
+        return (array.array('f', verts),
+                array.array('f', norms),
+                array.array('f', txcds),
+                numTris)
 
 
 @memoized

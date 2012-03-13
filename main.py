@@ -28,6 +28,7 @@ import time
 import math
 import tempfile
 from collections import defaultdict
+from PIL import Image
 
 from Shader import Shader
 import Terrain
@@ -38,6 +39,7 @@ import math3D
 defaultWindowW = 640
 defaultWindowH = 480
 useWireframe = False
+tex = GLuint(0)
 shader = None
 fps_display = None
 chunkStore = None
@@ -116,23 +118,50 @@ def setupGLState():
     glEnable(GL_LIGHTING)
     glEnable(GL_LIGHT0)
 
-    glLightfv(GL_LIGHT0, GL_POSITION, arrayOfGLfloat(20.0, 40.0, 30.0, 0.0))
+    glLightfv(GL_LIGHT0, GL_POSITION, arrayOfGLfloat(1.0, 0.0, 0.0, 1.0))
     glLightfv(GL_LIGHT0, GL_AMBIENT, arrayOfGLfloat(0.3, 0.3, 0.3, 1.0))
     glLightfv(GL_LIGHT0, GL_DIFFUSE, arrayOfGLfloat(0.9, 0.9, 0.9, 1.0))
     glLightfv(GL_LIGHT0, GL_SPECULAR, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
 
-    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, arrayOfGLfloat(0.5, 0.5, 0.5, 1.0))
-    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, arrayOfGLfloat(1, 1, 1, 1))
-    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 1)
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, arrayOfGLfloat(0.3, 0.3, 0.3, 1.0))
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 30)
+
+    glActiveTexture(GL_TEXTURE0)
 
 
-def createShaderObject():
-    "Create a shader to apply to the terrain."
-    # create the Phong Shader by Jerome GUINOT aka 'JeGX' - jegx [at] ozone3d [dot] net
-    # see http://www.ozone3d.net/tutorials/glsl_lighting_phong.php
-    return Shader(['''
+def createTextureObject():
+    imageFn = "block.png"
+    im = Image.open(imageFn)
+    ix, iy = im.size[0], im.size[1]
+    try:
+        # get image meta-data (dimensions) and data
+        image = im.tostring("raw", "RGBA", 0, -1)
+    except SystemError:
+        # has no alpha channel, synthesize one
+        image = im.tostring("raw", "RGBX", 0, -1)
+
+    glGenTextures(1, pointer(tex))
+    glActiveTexture(GL_TEXTURE0)
+    glBindTexture(GL_TEXTURE_2D, tex)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
+    glPixelStorei(GL_UNPACK_ALIGNMENT,1)
+    gluBuild2DMipmaps(GL_TEXTURE_2D, GL_RGBA, ix, iy,
+                      GL_RGBA, GL_UNSIGNED_BYTE, image)
+
+    return tex
+
+
+def createShaderObject(tex):
+    "Create and return a shader to apply to the terrain."
+    assert tex
+
+    # Based on the Phong Shader at <http://www.ozone3d.net/tutorials/glsl_lighting_phong.php>
+    shader = Shader(['''
     varying vec3 normal, lightDir0, eyeVec;
-    varying vec4 color;
 
     void main()
     {
@@ -143,19 +172,21 @@ def createShaderObject():
         lightDir0 = vec3(gl_LightSource[0].position.xyz - vVertex);
         eyeVec = -vVertex;
 
-        color = gl_Color;
+        gl_TexCoord[0]  = gl_MultiTexCoord0;
 
         gl_Position = ftransform();
     }
     '''], ['''
+    uniform sampler2D tex;
     varying vec3 normal, lightDir0, eyeVec;
-    varying vec4 color;
 
     void main (void)
     {
         vec4 final_color =
         (gl_FrontLightModelProduct.sceneColor * gl_FrontMaterial.ambient) +
-        (gl_LightSource[0].ambient * gl_FrontMaterial.ambient * color);
+        (gl_LightSource[0].ambient * gl_FrontMaterial.ambient);
+
+        vec4 texcolor = texture2D(tex, gl_TexCoord[0].st);
 
         vec3 N = normalize(normal);
         vec3 L0 = normalize(lightDir0);
@@ -166,7 +197,7 @@ def createShaderObject():
         {
             final_color += gl_LightSource[0].diffuse *
                            gl_FrontMaterial.diffuse *
-                           color *
+                           texcolor *
                            lambertTerm0;
 
             vec3 E = normalize(eyeVec);
@@ -175,16 +206,19 @@ def createShaderObject():
                              gl_FrontMaterial.shininess );
             final_color += gl_LightSource[0].specular *
                            gl_FrontMaterial.specular *
-                           color *
+                           texcolor *
                            specular;
         }
         gl_FragColor = final_color;
     }
     '''])
 
+    return shader
+
 
 def main():
     global window
+    global tex
     global shader
     global fps_display
     global chunkStore
@@ -193,7 +227,8 @@ def main():
     print startupLicenseMessage
 
     setupGLState()
-    shader = createShaderObject()
+    tex = createTextureObject()
+    shader = createShaderObject(tex)
     fps_display = pyglet.clock.ClockDisplay(format='%(fps).0f FPS')
 
     # Setup the initial camera.
@@ -313,6 +348,7 @@ def on_draw():
 
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_LIGHTING)
+    glEnable(GL_TEXTURE_2D)
 
     glPushMatrix()
 
@@ -321,9 +357,14 @@ def on_draw():
               cameraCenter.x, cameraCenter.y, cameraCenter.z,
               cameraUp.x,     cameraUp.y,     cameraUp.z)
 
+    glBindTexture(GL_TEXTURE_2D, tex)
     shader.bind()
+    shader.uniformui("tex", tex)
+
     chunkStore.drawVisibleChunks()
+
     shader.unbind()
+    glBindTexture(GL_TEXTURE_2D, 0)
 
     glPopMatrix()
 
@@ -331,6 +372,7 @@ def on_draw():
 
     glDisable(GL_DEPTH_TEST)
     glDisable(GL_LIGHTING)
+    glDisable(GL_TEXTURE_2D)
 
     glMatrixMode(GL_PROJECTION)
     glPushMatrix()

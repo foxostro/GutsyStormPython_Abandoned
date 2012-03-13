@@ -105,6 +105,19 @@ class Shader:
 				# retrieve the uniform location, and set
 			}[len(vals)](glGetUniformLocation(self.handle, name), *vals)
 
+	# upload an unsigned integer uniform
+	# this program must be currently bound
+	def uniformui(self, name, *vals):
+		# check there are 1-4 values
+		if len(vals) in range(1, 5):
+			# select the correct function
+			{ 1 : glUniform1ui,
+				2 : glUniform2ui,
+				3 : glUniform3ui,
+				4 : glUniform4ui
+				# retrieve the uniform location, and set
+			}[len(vals)](glGetUniformLocation(self.handle, name), *vals)
+
 	# upload an integer uniform
 	# this program must be currently bound
 	def uniformi(self, name, *vals):
