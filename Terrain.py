@@ -64,7 +64,7 @@ class memoized(object):
       return functools.partial(self.__call__, obj)
 
 
-def asyncGenerateTerrain(seed, terrainHeight, minP, maxP):
+def procedurallyGenerateChunkWorker(seed, terrainHeight, minP, maxP):
     logger.debug("Generating new chunk data at %s" % str(minP))
     voxelData = Chunk.computeTerrainData(seed, terrainHeight, minP, maxP)
     verts, norms, numTris = \
@@ -72,7 +72,7 @@ def asyncGenerateTerrain(seed, terrainHeight, minP, maxP):
     return voxelData, verts, norms, numTris
 
 
-def asyncLoadTerrain(folder, chunkID):
+def loadChunkFromDiskWorker(folder, chunkID):
     fn = computeChunkFileName(folder, chunkID)
     if not os.path.exists(fn):
         raise Exception("File does not exist: %s" % fn)
@@ -159,7 +159,7 @@ class Chunk:
 
         # Spin off a task to generate terrain and geometry.
         # Chunk will have no terrain or geometry until this has finished.
-        chunk.terrainTaskResult = pool.apply_async(asyncGenerateTerrain,
+        chunk.terrainTaskResult = pool.apply_async(procedurallyGenerateChunkWorker,
             [seed, terrainHeight, minP, maxP],
             callback=lambda r: chunk._callbackTerrainTaskHasFinished(r))
 
@@ -281,7 +281,7 @@ class Chunk:
         chunk.folder = folder
 
         # Spin off a task to load the terrain.
-        chunk.terrainTaskResult = pool.apply_async(asyncLoadTerrain,
+        chunk.terrainTaskResult = pool.apply_async(loadChunkFromDiskWorker,
             [folder, chunkID],
             callback=lambda r: chunk._callbackTerrainTaskHasFinished(r))
 
