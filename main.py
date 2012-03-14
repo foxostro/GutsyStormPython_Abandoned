@@ -132,7 +132,10 @@ def setupGLState():
 
 
 def createTextureObject():
-    imageFn = "block.png"
+    if not pyglet.gl.gl_info.have_extension('GL_EXT_texture_array'):
+        raise RuntimeError("Extension not supported: GL_EXT_texture_array")
+
+    imageFn = "terrain.png"
     im = Image.open(imageFn)
     ix, iy = im.size[0], im.size[1]
     try:
@@ -142,15 +145,19 @@ def createTextureObject():
         # has no alpha channel, synthesize one
         image = im.tostring("raw", "RGBX", 0, -1)
 
+    w = ix
+    h = 16
+    sliceCount = iy // h
+
     glGenTextures(1, pointer(tex))
     glActiveTexture(GL_TEXTURE0)
-    glBindTexture(GL_TEXTURE_2D, tex)
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
-    glPixelStorei(GL_UNPACK_ALIGNMENT,1)
-    gluBuild2DMipmaps(GL_TEXTURE_2D, GL_RGBA, ix, iy,
-                      GL_RGBA, GL_UNSIGNED_BYTE, image)
+    glBindTexture(GL_TEXTURE_2D_ARRAY_EXT, tex);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY_EXT, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+    glTexParameterf(GL_TEXTURE_2D_ARRAY_EXT, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    glTexParameteri(GL_TEXTURE_2D_ARRAY_EXT, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY_EXT, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY_EXT, 0, GL_RGBA, w, h, sliceCount, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, image);
 
     return tex
 
@@ -177,7 +184,10 @@ def createShaderObject(tex):
         gl_Position = ftransform();
     }
     '''], ['''
-    uniform sampler2D tex;
+    #version 110
+    #extension GL_EXT_texture_array : enable
+
+    uniform sampler2DArray tex;
     varying vec3 normal, lightDir0, eyeVec;
 
     void main (void)
@@ -186,7 +196,7 @@ def createShaderObject(tex):
         (gl_FrontLightModelProduct.sceneColor * gl_FrontMaterial.ambient) +
         (gl_LightSource[0].ambient * gl_FrontMaterial.ambient);
 
-        vec4 texcolor = texture2D(tex, gl_TexCoord[0].st);
+        vec4 texcolor = texture2DArray(tex, gl_TexCoord[0].stp);
 
         vec3 N = normalize(normal);
         vec3 L0 = normalize(lightDir0);
@@ -229,6 +239,11 @@ def main():
     setupGLState()
     tex = createTextureObject()
     shader = createShaderObject(tex)
+
+    glBindTexture(GL_TEXTURE_2D_ARRAY_EXT, tex)
+    shader.bind()
+    shader.uniformi("tex", 0) # texture unit 0
+
     fps_display = pyglet.clock.ClockDisplay(format='%(fps).0f FPS')
 
     # Setup the initial camera.
@@ -348,7 +363,6 @@ def on_draw():
 
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_LIGHTING)
-    glEnable(GL_TEXTURE_2D)
 
     glPushMatrix()
 
@@ -357,13 +371,11 @@ def on_draw():
               cameraCenter.x, cameraCenter.y, cameraCenter.z,
               cameraUp.x,     cameraUp.y,     cameraUp.z)
 
-    glBindTexture(GL_TEXTURE_2D, tex)
+    glActiveTexture(GL_TEXTURE0)
+    glBindTexture(GL_TEXTURE_2D_ARRAY_EXT, tex)
     shader.bind()
-
     chunkStore.drawVisibleChunks()
-
     shader.unbind()
-    glBindTexture(GL_TEXTURE_2D, 0)
 
     glPopMatrix()
 

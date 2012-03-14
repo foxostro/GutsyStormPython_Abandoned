@@ -258,7 +258,7 @@ class Chunk:
         glNormalPointer(GL_FLOAT, 0, 0)
 
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo_txcds)
-        glTexCoordPointer(2, GL_FLOAT, 0, 0);
+        glTexCoordPointer(3, GL_FLOAT, 0, 0);
 
         glDrawArrays(GL_TRIANGLES, 0, self.numTrianglesInBatch)
 
@@ -452,14 +452,23 @@ class Chunk:
             if not voxelData.get(x-minX, y-minY, z-minZ):
                 continue
 
+            grass = 2
+            dirt = 1
+            transition = 0
+            page = dirt
+
             # Top Face
             if not (y+1<maxY and voxelData.get(x-minX, y-minY+1, z-minZ)):
+                # This tile is exposed to air on the top so use page 1 for the other
+                # sides of the block.
+                page = transition
+
                 verts.extend([x-L, y+L, z+L,  x+L, y+L, z-L,  x-L, y+L, z-L,
                               x-L, y+L, z+L,  x+L, y+L, z+L,  x+L, y+L, z-L])
                 norms.extend([  0,  +1,   0,    0,  +1,   0,    0,  +1,   0,
                                 0,  +1,   0,    0,  +1,   0,    0,  +1,   0])
-                txcds.extend([  1, 0,           0, 1,           1, 1,
-                                1, 0,           0, 0,           0, 1])
+                txcds.extend([  1, 0, 2,        0, 1, 2,        1, 1, 2,
+                                1, 0, 2,        0, 0, 2,        0, 1, 2])
 
             # Bottom Face
             if not (y-1>=minY and voxelData.get(x-minX, y-minY-1, z-minZ)):
@@ -467,8 +476,8 @@ class Chunk:
                               x+L, y-L, z-L,  x+L, y-L, z+L,  x-L, y-L, z+L])
                 norms.extend([  0,  -1,   0,      0, -1,  0,    0,  -1,   0,
                                 0,  -1,   0,      0, -1,  0,    0,  -1,   0])
-                txcds.extend([  1, 1,           0, 1,           1, 0,
-                                0, 1,           0, 0,           1, 0])
+                txcds.extend([  1, 1, page,       0, 1, page,      1, 0, page,
+                                0, 1, page,       0, 0, page,      1, 0, page])
 
             # Front Face
             if not (z+1<maxZ and voxelData.get(x-minX, y-minY, z-minZ+1)):
@@ -476,8 +485,8 @@ class Chunk:
                               x-L, y-L, z+L,  x+L, y-L, z+L,  x+L, y+L, z+L])
                 norms.extend([  0,   0,  +1,    0,   0,  +1,    0,   0,  +1,
                                 0,   0,  +1,    0,   0,  +1,    0,   0,  +1])
-                txcds.extend([  0, 0,           1, 1,           0, 1,
-                                0, 0,           1, 0,           1, 1])
+                txcds.extend([  0, 0, page,     1, 1, page,     0, 1, page,
+                                0, 0, page,     1, 0, page,     1, 1, page])
 
             # Back Face
             if not (z-1>=minZ and voxelData.get(x-minX, y-minY, z-minZ-1)):
@@ -485,8 +494,8 @@ class Chunk:
                               x+L, y+L, z-L,  x+L, y-L, z-L,  x-L, y-L, z-L])
                 norms.extend([  0,   0,  -1,    0,   0,  -1,    0,   0,  -1,
                                 0,   0,  -1,    0,   0,  -1,    0,   0,  -1])
-                txcds.extend([  0, 1,           1, 1,           0, 0,
-                                1, 1,           1, 0,           0, 0])
+                txcds.extend([  0, 1, page,     1, 1, page,     0, 0, page,
+                                1, 1, page,     1, 0, page,     0, 0, page])
 
             # Right Face
             if not (x+1<maxX and voxelData.get(x-minX+1, y-minY, z-minZ)):
@@ -494,8 +503,8 @@ class Chunk:
                               x+L, y-L, z-L,  x+L, y+L, z-L,  x+L, y-L, z+L])
                 norms.extend([ +1,   0,   0,   +1,   0,   0,   +1,   0,   0,
                                +1,   0,   0,   +1,   0,   0,   +1,   0,   0])
-                txcds.extend([  0, 1,           1, 1,           1, 0,
-                                0, 0,           0, 1,           1, 0])
+                txcds.extend([  0, 1, page,     1, 1, page,     1, 0, page,
+                                0, 0, page,     0, 1, page,     1, 0, page])
 
             # Left Face
             if not (x-1>=minX and voxelData.get(x-minX-1, y-minY, z-minZ)):
@@ -503,8 +512,8 @@ class Chunk:
                               x-L, y-L, z+L,  x-L, y+L, z-L,  x-L, y-L, z-L])
                 norms.extend([ -1,   0,   0,   -1,   0,   0,   -1,   0,   0,
                                -1,   0,   0,   -1,   0,   0,   -1,   0,   0])
-                txcds.extend([  1, 0,           1, 1,           0, 1,
-                                1, 0,           0, 1,           0, 0])
+                txcds.extend([  1, 0, page,     1, 1, page,     0, 1, page,
+                                1, 0, page,     0, 1, page,     0, 0, page])
 
         numTris = len(verts) / 3
         return (array.array('f', verts),

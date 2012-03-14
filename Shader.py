@@ -56,7 +56,7 @@ class Shader:
 			# retrieve the log text
 			glGetShaderInfoLog(shader, temp, None, buffer)
 			# print the log to the console
-			print buffer.value
+			raise RuntimeError(buffer.value)
 		else:
 			# all is well, so attach the shader to the program
 			glAttachShader(self.handle, shader);
@@ -78,7 +78,7 @@ class Shader:
 			# retrieve the log text
 			glGetProgramInfoLog(self.handle, temp, None, buffer)
 			# print the log to the console
-			print buffer.value
+			raise RuntimeError(buffer.value)
 		else:
 			# all is well, so we are linked
 			self.linked = True
