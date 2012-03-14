@@ -34,6 +34,7 @@ import math3D
 
 
 logger = multiprocessing.log_to_stderr(logging.INFO)
+debugSerializeChunkTasks = False
 
 
 class memoized(object):
@@ -62,6 +63,38 @@ class memoized(object):
    def __get__(self, obj, objtype):
       """Support instance methods."""
       return functools.partial(self.__call__, obj)
+
+
+class VoxelData:
+    def __init__(self, sizeX, sizeY, sizeZ):
+        self.data = array.array('i', [0] * (sizeX*sizeY*sizeZ))
+        self.sizeX = sizeX
+        self.sizeY = sizeY
+        self.sizeZ = sizeZ
+
+
+    @staticmethod
+    def clamp(minvalue, value, maxvalue):
+        return max(minvalue, min(value, maxvalue))
+
+
+    def getIndexAt(self, x, y, z):
+        idx = VoxelData.clamp(0, x, self.sizeX)*self.sizeY*self.sizeZ + \
+              VoxelData.clamp(0, y, self.sizeY)*self.sizeZ + \
+              VoxelData.clamp(0, z, self.sizeZ)
+        assert idx >= 0 and idx < len(self.data)
+        return idx
+
+
+    def get(self, x, y, z):
+        idx = self.getIndexAt(x, y, z)
+        return self.data[idx]
+
+
+    def put(self, val, x, y, z):
+        idx = self.getIndexAt(x, y, z)
+        self.data[idx] = int(val)
+        return val
 
 
 def procedurallyGenerateChunkWorker(seed, terrainHeight, minP, maxP):
@@ -163,10 +196,14 @@ class Chunk:
 
         # Spin off a task to generate terrain and geometry.
         # Chunk will have no terrain or geometry until this has finished.
-        chunk.terrainTaskResult = \
-            pool.apply_async(procedurallyGenerateChunkWorker,
-                [seed, terrainHeight, minP, maxP],
-                callback=lambda r: chunk._callbackTerrainTaskHasFinished(r))
+        if debugSerializeChunkTasks:
+            r = procedurallyGenerateChunkWorker(seed,terrainHeight,minP,maxP)
+            chunk._callbackTerrainTaskHasFinished(r)
+        else:
+            chunk.terrainTaskResult = \
+                pool.apply_async(procedurallyGenerateChunkWorker,
+                    [seed, terrainHeight, minP, maxP],
+                    callback=lambda r:chunk._callbackTerrainTaskHasFinished(r))
 
         return chunk
 
@@ -180,9 +217,16 @@ class Chunk:
 
             # Chunk is now dirty as it has never been saved. Spin off a task
             # to save it asynchronously.
-            self.saveTaskResult = self.pool.apply_async(saveChunkToDiskWorker,
-                [self.folder, self.voxelData, self.minP, self.maxP],
-                callback = self.setNotDirty)
+            if debugSerializeChunkTasks:
+                r = saveChunkToDiskWorker(self.folder, self.voxelData,
+                                          self.minP, self.maxP)
+                self.setNotDirty(r)
+            else:
+                self.saveTaskResult = \
+                    self.pool.apply_async(saveChunkToDiskWorker,
+                                          [self.folder, self.voxelData,
+                                           self.minP, self.maxP],
+                                          callback = self.setNotDirty)
 
 
     def maybeGenerateVBOs(self):
@@ -295,9 +339,15 @@ class Chunk:
         chunk.folder = folder
 
         # Spin off a task to load the terrain.
-        chunk.terrainTaskResult = pool.apply_async(loadChunkFromDiskWorker,
-            [folder, chunkID],
-            callback=lambda r: chunk._callbackTerrainTaskHasFinished(r))
+        if debugSerializeChunkTasks:
+            r = loadChunkFromDiskWorker(folder, chunkID)
+            chunk._callbackTerrainTaskHasFinished(r)
+        else:
+            callback = lambda r: chunk._callbackTerrainTaskHasFinished(r)
+            chunk.terrainTaskResult = \
+                pool.apply_async(loadChunkFromDiskWorker,
+                                 [folder, chunkID],
+                                 callback=callback)
 
         return chunk
 
@@ -340,7 +390,10 @@ class Chunk:
                                   float(p.y)*yFreq,
                                   float(p.z))
         pPrime = Vector3(p.x, p.y + t, p.y)
-        return Chunk.groundGradient(terrainHeight, pPrime) <= 0
+        if Chunk.groundGradient(terrainHeight, pPrime) <= 0:
+            return 1
+        else:
+            return 0
 
 
     @staticmethod
@@ -361,8 +414,7 @@ class Chunk:
         noiseSource0 = PerlinNoise(randomseed=seed)
         noiseSource1 = PerlinNoise(randomseed=seed+1)
 
-        voxelData = numpy.arange((maxX-minX)*(maxY-minY)*(maxZ-minZ))
-        voxelData = voxelData.reshape(maxX-minX, maxY-minY, maxZ-minZ)
+        voxelData = VoxelData(maxX-minX, maxY-minY, maxZ-minZ)
 
         for x,y,z in itertools.product(range(minX, maxX),
                                        range(minY, maxY),
@@ -370,7 +422,7 @@ class Chunk:
             # p is in world-space, not chunk-space
             p = Vector3(float(x), float(y), float(z))
             g = Chunk.isGround(terrainHeight, noiseSource0, noiseSource1, p)
-            voxelData[x - minX, y - minY, z - minZ] = g
+            voxelData.put(g, x - minX, y - minY, z - minZ)
 
         return voxelData
 
@@ -397,11 +449,11 @@ class Chunk:
         for x,y,z in itertools.product(range(minX, maxX),
                                        range(minY, maxY),
                                        range(minZ, maxZ)):
-            if not voxelData[x-minX, y-minY, z-minZ]:
+            if not voxelData.get(x-minX, y-minY, z-minZ):
                 continue
 
             # Top Face
-            if not (y+1<maxY and voxelData[x-minX, y-minY+1, z-minZ]):
+            if not (y+1<maxY and voxelData.get(x-minX, y-minY+1, z-minZ)):
                 verts.extend([x-L, y+L, z+L,  x+L, y+L, z-L,  x-L, y+L, z-L,
                               x-L, y+L, z+L,  x+L, y+L, z+L,  x+L, y+L, z-L])
                 norms.extend([  0,  +1,   0,    0,  +1,   0,    0,  +1,   0,
@@ -410,7 +462,7 @@ class Chunk:
                                 1, 0,           0, 0,           0, 1])
 
             # Bottom Face
-            if not (y-1>=minY and voxelData[x-minX, y-minY-1, z-minZ]):
+            if not (y-1>=minY and voxelData.get(x-minX, y-minY-1, z-minZ)):
                 verts.extend([x-L, y-L, z-L,  x+L, y-L, z-L,  x-L, y-L, z+L,
                               x+L, y-L, z-L,  x+L, y-L, z+L,  x-L, y-L, z+L])
                 norms.extend([  0,  -1,   0,      0, -1,  0,    0,  -1,   0,
@@ -419,7 +471,7 @@ class Chunk:
                                 0, 1,           0, 0,           1, 0])
 
             # Front Face
-            if not (z+1<maxZ and voxelData[x-minX, y-minY, z-minZ+1]):
+            if not (z+1<maxZ and voxelData.get(x-minX, y-minY, z-minZ+1)):
                 verts.extend([x-L, y-L, z+L,  x+L, y+L, z+L,  x-L, y+L, z+L,
                               x-L, y-L, z+L,  x+L, y-L, z+L,  x+L, y+L, z+L])
                 norms.extend([  0,   0,  +1,    0,   0,  +1,    0,   0,  +1,
@@ -428,7 +480,7 @@ class Chunk:
                                 0, 0,           1, 0,           1, 1])
 
             # Back Face
-            if not (z-1>=minZ and voxelData[x-minX, y-minY, z-minZ-1]):
+            if not (z-1>=minZ and voxelData.get(x-minX, y-minY, z-minZ-1)):
                 verts.extend([x-L, y+L, z-L,  x+L, y+L, z-L,  x-L, y-L, z-L,
                               x+L, y+L, z-L,  x+L, y-L, z-L,  x-L, y-L, z-L])
                 norms.extend([  0,   0,  -1,    0,   0,  -1,    0,   0,  -1,
@@ -437,7 +489,7 @@ class Chunk:
                                 1, 1,           1, 0,           0, 0])
 
             # Right Face
-            if not (x+1<maxX and voxelData[x-minX+1, y-minY, z-minZ]):
+            if not (x+1<maxX and voxelData.get(x-minX+1, y-minY, z-minZ)):
                 verts.extend([x+L, y+L, z-L,  x+L, y+L, z+L,  x+L, y-L, z+L,
                               x+L, y-L, z-L,  x+L, y+L, z-L,  x+L, y-L, z+L])
                 norms.extend([ +1,   0,   0,   +1,   0,   0,   +1,   0,   0,
@@ -446,7 +498,7 @@ class Chunk:
                                 0, 0,           0, 1,           1, 0])
 
             # Left Face
-            if not (x-1>=minX and voxelData[x-minX-1, y-minY, z-minZ]):
+            if not (x-1>=minX and voxelData.get(x-minX-1, y-minY, z-minZ)):
                 verts.extend([x-L, y-L, z+L,  x-L, y+L, z+L,  x-L, y+L, z-L,
                               x-L, y-L, z+L,  x-L, y+L, z-L,  x-L, y-L, z-L])
                 norms.extend([ -1,   0,   0,   -1,   0,   0,   -1,   0,   0,

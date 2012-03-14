@@ -359,7 +359,6 @@ def on_draw():
 
     glBindTexture(GL_TEXTURE_2D, tex)
     shader.bind()
-    shader.uniformui("tex", tex)
 
     chunkStore.drawVisibleChunks()
 
