@@ -47,7 +47,7 @@ chunkStore = None
 seed = 1330765820.45
 keysDown = defaultdict(bool)
 cameraPos = Vector3(92.317, 33.122, 122.606)
-lightPos = Vector3(92.317, 33.122, 122.606)
+lightDir = Vector3(0.707, -0.707, 0.707)
 cameraRot = Quaternion.fromAxisAngle(Vector3(0,1,0), 0)
 cameraSpeed = 5.0
 cameraRotSpeed = 1.0
@@ -118,12 +118,12 @@ def setupGLState():
     glEnable(GL_LIGHTING)
     glEnable(GL_LIGHT0)
 
-    glLightfv(GL_LIGHT0, GL_POSITION, arrayOfGLfloat(lightPos.x, lightPos.y, lightPos.z, 1.0))
-    glLightfv(GL_LIGHT0, GL_AMBIENT, arrayOfGLfloat(0.3, 0.3, 0.3, 1.0))
+    glLightfv(GL_LIGHT0, GL_POSITION, arrayOfGLfloat(lightDir.x, lightDir.y, lightDir.z, 0.0))
+    glLightfv(GL_LIGHT0, GL_AMBIENT, arrayOfGLfloat(0.5, 0.5, 0.5, 1.0))
     glLightfv(GL_LIGHT0, GL_DIFFUSE, arrayOfGLfloat(0.9, 0.9, 0.9, 1.0))
     glLightfv(GL_LIGHT0, GL_SPECULAR, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
 
-    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, arrayOfGLfloat(0.3, 0.3, 0.3, 1.0))
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, arrayOfGLfloat(0.5, 0.5, 0.5, 1.0))
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10)
@@ -177,13 +177,10 @@ def createShaderObject(tex):
 
         // Vertex position in eye-space
         vec3 vVertex = vec3(gl_ModelViewMatrix * gl_Vertex);
-
-        // Light position in eye-space
-        vec3 lightPos0 = vec4(gl_ModelViewMatrix * gl_LightSource[0].position).xyz;
-
-        // Direction from the vertex to the light, in eye-space
-        lightDir0 = lightPos0 - vVertex;
         eyeVec = -vVertex;
+
+        // Light direction in eye-space
+        lightDir0 = -vec4(gl_ModelViewMatrix * gl_LightSource[0].position).xyz;
 
         gl_Position = ftransform();
     }
@@ -196,11 +193,11 @@ def createShaderObject(tex):
 
     void main (void)
     {
+        vec4 texcolor = texture2DArray(tex, gl_TexCoord[0].stp);
+
         vec4 final_color =
         (gl_FrontLightModelProduct.sceneColor * gl_FrontMaterial.ambient) +
-        (gl_LightSource[0].ambient * gl_FrontMaterial.ambient);
-
-        vec4 texcolor = texture2DArray(tex, gl_TexCoord[0].stp);
+        (gl_LightSource[0].ambient * gl_FrontMaterial.ambient * texcolor);
 
         vec3 N = normalize(normal);
         vec3 L0 = normalize(lightDir0);
@@ -423,8 +420,6 @@ def on_draw():
     shader.bind()
     chunkStore.drawVisibleChunks()
     shader.unbind()
-
-    drawDebugCube(lightPos)
 
     glPopMatrix()
 
