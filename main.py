@@ -40,12 +40,14 @@ defaultWindowW = 640
 defaultWindowH = 480
 useWireframe = False
 tex = GLuint(0)
+vbo_cube_verts = GLuint(0)
 shader = None
 fps_display = None
 chunkStore = None
 seed = 1330765820.45
 keysDown = defaultdict(bool)
 cameraPos = Vector3(92.317, 33.122, 122.606)
+lightPos = Vector3(92.317, 33.122, 122.606)
 cameraRot = Quaternion.fromAxisAngle(Vector3(0,1,0), 0)
 cameraSpeed = 5.0
 cameraRotSpeed = 1.0
@@ -62,8 +64,6 @@ This is free software, and you are welcome to redistribute it under certain
 conditions. You should have received a copy of the GNU General Public License
 along with GutsyStorm. If not, see <http://www.gnu.org/licenses/>.
 """
-
-
 
 
 def updateCameraLookVectors():
@@ -118,7 +118,7 @@ def setupGLState():
     glEnable(GL_LIGHTING)
     glEnable(GL_LIGHT0)
 
-    glLightfv(GL_LIGHT0, GL_POSITION, arrayOfGLfloat(1.0, 0.0, 0.0, 1.0))
+    glLightfv(GL_LIGHT0, GL_POSITION, arrayOfGLfloat(lightPos.x, lightPos.y, lightPos.z, 1.0))
     glLightfv(GL_LIGHT0, GL_AMBIENT, arrayOfGLfloat(0.3, 0.3, 0.3, 1.0))
     glLightfv(GL_LIGHT0, GL_DIFFUSE, arrayOfGLfloat(0.9, 0.9, 0.9, 1.0))
     glLightfv(GL_LIGHT0, GL_SPECULAR, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
@@ -126,7 +126,7 @@ def setupGLState():
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, arrayOfGLfloat(0.3, 0.3, 0.3, 1.0))
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, arrayOfGLfloat(1.0, 1.0, 1.0, 1.0))
-    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 30)
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10)
 
     glActiveTexture(GL_TEXTURE0)
 
@@ -173,13 +173,17 @@ def createShaderObject(tex):
     void main()
     {
         normal = gl_NormalMatrix * gl_Normal;
+        gl_TexCoord[0]  = gl_MultiTexCoord0;
 
+        // Vertex position in eye-space
         vec3 vVertex = vec3(gl_ModelViewMatrix * gl_Vertex);
 
-        lightDir0 = vec3(gl_LightSource[0].position.xyz - vVertex);
-        eyeVec = -vVertex;
+        // Light position in eye-space
+        vec3 lightPos0 = vec4(gl_ModelViewMatrix * gl_LightSource[0].position).xyz;
 
-        gl_TexCoord[0]  = gl_MultiTexCoord0;
+        // Direction from the vertex to the light, in eye-space
+        lightDir0 = lightPos0 - vVertex;
+        eyeVec = -vVertex;
 
         gl_Position = ftransform();
     }
@@ -224,6 +228,48 @@ def createShaderObject(tex):
     '''])
 
     return shader
+
+
+def drawDebugCube(p):
+    "Draw a white cube at the position p."
+    global vbo_cube_verts
+
+    if not vbo_cube_verts:
+        vbo_cube_verts = GLuint()
+        glGenBuffers(1, pointer(vbo_cube_verts))
+        cube_verts = [
+        -1, +1, +1,   +1, +1, -1,   -1, +1, -1, # Top Face
+        -1, +1, +1,   +1, +1, +1,   +1, +1, -1,
+        -1, -1, -1,   +1, -1, -1,   -1, -1, +1, # Bottom Face
+        +1, -1, -1,   +1, -1, +1,   -1, -1, +1,
+        -1, -1, +1,   +1, +1, +1,   -1, +1, +1, # Front Face
+        -1, -1, +1,   +1, -1, +1,   +1, +1, +1,
+        -1, +1, -1,   +1, +1, -1,   -1, -1, -1, # Back Face
+        +1, +1, -1,   +1, -1, -1,   -1, -1, -1,
+        +1, +1, -1,   +1, +1, +1,   +1, -1, +1, # Right Face
+        +1, -1, -1,   +1, +1, -1,   +1, -1, +1,
+        -1, -1, +1,   -1, +1, +1,   -1, +1, -1, # Left Face
+        -1, -1, +1,   -1, +1, -1,   -1, -1, -1]
+        data = arrayOfGLfloat(*cube_verts)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_cube_verts)
+        glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW)
+
+    glDisable(GL_LIGHTING)
+    glDisable(GL_TEXTURE_2D)
+    glEnableClientState(GL_VERTEX_ARRAY)
+
+    glPushMatrix()
+    glTranslatef(p.x, p.y, p.z)
+    glScalef(0.2, 0.2, 0.2)
+
+    glColor4f(1.0, 1.0, 1.0, 1.0)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_cube_verts)
+    glVertexPointer(3, GL_FLOAT, 0, 0)
+    glDrawArrays(GL_TRIANGLES, 0, 8*2*3)
+
+    glPopMatrix()
+
+    glDisableClientState(GL_VERTEX_ARRAY)
 
 
 def main():
@@ -307,6 +353,7 @@ def update(dt):
 
     chunkStore.update(dt)
 
+
 pyglet.clock.schedule(update)
 
 
@@ -376,6 +423,8 @@ def on_draw():
     shader.bind()
     chunkStore.drawVisibleChunks()
     shader.unbind()
+
+    drawDebugCube(lightPos)
 
     glPopMatrix()
 
