@@ -235,12 +235,8 @@ class Chunk:
 
     def draw(self):
         # If geometry is not available then there is nothing to do now.
-        if (not self.vbo_verts) or (not self.vbo_norms):
+        if not (self.vbo_verts and self.vbo_norms and self.vbo_txcds):
             return
-
-        glEnableClientState(GL_VERTEX_ARRAY)
-        glEnableClientState(GL_NORMAL_ARRAY)
-        glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo_verts)
         glVertexPointer(3, GL_FLOAT, 0, 0)
@@ -252,10 +248,6 @@ class Chunk:
         glTexCoordPointer(3, GL_FLOAT, 0, 0);
 
         glDrawArrays(GL_TRIANGLES, 0, self.numTrianglesInBatch)
-
-        glDisableClientState(GL_TEXTURE_COORD_ARRAY)
-        glDisableClientState(GL_NORMAL_ARRAY)
-        glDisableClientState(GL_VERTEX_ARRAY)
 
 
     def destroy(self):
@@ -676,7 +668,13 @@ class ChunkStore:
 
     def drawVisibleChunks(self):
         "Draw all chunks which are currently visible."
+        glEnableClientState(GL_VERTEX_ARRAY)
+        glEnableClientState(GL_NORMAL_ARRAY)
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY)
         map(Chunk.draw, self.visibleChunks)
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY)
+        glDisableClientState(GL_NORMAL_ARRAY)
+        glDisableClientState(GL_VERTEX_ARRAY)
 
 
     def setCamera(self, p, r, fr):
