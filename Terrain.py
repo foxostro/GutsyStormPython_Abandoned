@@ -73,17 +73,8 @@ class VoxelData:
         self.sizeZ = sizeZ
 
 
-    @staticmethod
-    def clamp(minvalue, value, maxvalue):
-        return max(minvalue, min(value, maxvalue))
-
-
     def getIndexAt(self, x, y, z):
-        idx = VoxelData.clamp(0, x, self.sizeX)*self.sizeY*self.sizeZ + \
-              VoxelData.clamp(0, y, self.sizeY)*self.sizeZ + \
-              VoxelData.clamp(0, z, self.sizeZ)
-        assert idx >= 0 and idx < len(self.data)
-        return idx
+        return (x*self.sizeY*self.sizeZ) + (y*self.sizeZ) + z
 
 
     def get(self, x, y, z):
