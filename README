@@ -1,3 +1,13 @@
+This project has been abandoned. I've started rewriting the nascent game
+engine in a new project available at
+<http://github.com/foxostro/GutsyStormCocoa>. The main reason for doing
+this was that I was simply not able to get acceptable performance out of
+Python even with extensive work on performance optimization and research
+into Python optimization. Basically, it seemed my options were to either
+1) rewrite very large portions of the engine in another language (really,
+almost everything would have to be rewritten) or 2) 2) start over in another
+language. I chose to do a rewrite.
+
 Gutsy Storm is the codename for an otherwise nameless game project which
 seeks to investigate 3D game programming with Python and Pyglet. The game
 is so far intended to use a voxel-based, procedurally generated terrain
